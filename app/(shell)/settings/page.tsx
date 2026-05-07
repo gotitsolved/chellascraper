@@ -1,9 +1,9 @@
-import { getSettings } from "@/lib/api";
+import { settingsStore } from "@/lib/services/jobs-service";
 import { SettingsPageClient } from "@/components/settings-page-client";
 import { Settings } from "lucide-react";
 
 export default async function SettingsPage() {
-  const settings = await getSettings();
+  const settings = settingsStore;
 
   return (
     <div className="p-6 max-w-3xl mx-auto space-y-6">

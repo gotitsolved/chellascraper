@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { listLeads, createExport, generateCsv } from "@/lib/api";
+import { LeadsService } from "@/lib/services/leads-service";
 import type { ExportRequestPayload } from "@/lib/types";
 
 // POST /api/jobs/[jobId]/export — create a CSV export
@@ -16,7 +16,7 @@ export async function POST(
     // empty body is fine
   }
 
-  const exportRun = await createExport(jobId, payload);
+  const exportRun = await LeadsService.createExport(jobId, payload);
   return NextResponse.json(exportRun, { status: 201 });
 }
 
@@ -38,7 +38,7 @@ export async function GET(
     country: sp.get("country") ?? undefined,
   };
 
-  const { leads } = await listLeads(jobId, {
+  const { leads } = await LeadsService.listLeads(jobId, {
     minScore: payload.minScore,
     minRating: payload.minRating,
     hasEmail: payload.mustHaveEmail,
@@ -47,7 +47,7 @@ export async function GET(
     pageSize: 10000,
   });
 
-  const csv = generateCsv(leads);
+  const csv = LeadsService.generateCsv(leads);
 
   return new NextResponse(csv, {
     status: 200,

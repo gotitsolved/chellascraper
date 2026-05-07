@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { getJob, getActivity } from "@/lib/api";
+import { JobsService } from "@/lib/services/jobs-service";
 import { formatDistanceToNow } from "date-fns";
 import { cn } from "@/lib/utils";
 import type { ActivityEvent } from "@/lib/types";
@@ -35,8 +35,8 @@ export default async function JobActivityPage({
 }) {
   const { jobId } = await params;
   const [job, events] = await Promise.all([
-    getJob(jobId),
-    getActivity(jobId),
+    JobsService.getJob(jobId),
+    JobsService.getActivity(jobId),
   ]);
 
   if (!job) notFound();

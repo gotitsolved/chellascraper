@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { getJob } from "@/lib/api";
+import { JobsService } from "@/lib/services/jobs-service";
 import { JobTabsNav } from "@/components/job-tabs-nav";
 import { formatDistanceToNow } from "date-fns";
 import { ArrowLeft, Calendar } from "lucide-react";
@@ -13,7 +13,7 @@ export default async function JobLayout({
   params: Promise<{ jobId: string }>;
 }) {
   const { jobId } = await params;
-  const job = await getJob(jobId);
+  const job = await JobsService.getJob(jobId);
 
   if (!job) notFound();
 

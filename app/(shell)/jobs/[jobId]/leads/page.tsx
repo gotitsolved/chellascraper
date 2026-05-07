@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
-import { getJob, listLeads } from "@/lib/api";
+import { JobsService } from "@/lib/services/jobs-service";
+import { LeadsService } from "@/lib/services/leads-service";
 import { LeadsView } from "@/components/leads-view";
 
 export default async function JobLeadsPage({
@@ -9,8 +10,8 @@ export default async function JobLeadsPage({
 }) {
   const { jobId } = await params;
   const [job, { leads }] = await Promise.all([
-    getJob(jobId),
-    listLeads(jobId, { pageSize: 1000 }),
+    JobsService.getJob(jobId),
+    LeadsService.listLeads(jobId, { pageSize: 1000 }),
   ]);
 
   if (!job) notFound();

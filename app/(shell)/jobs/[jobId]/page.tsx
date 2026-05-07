@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { getJob } from "@/lib/api";
+import { JobsService } from "@/lib/services/jobs-service";
 import { JobProgressSummary } from "@/components/job-progress-summary";
 import { Badge } from "@/components/ui/badge";
 import { formatDistanceToNow } from "date-fns";
@@ -10,7 +10,7 @@ export default async function JobOverviewPage({
   params: Promise<{ jobId: string }>;
 }) {
   const { jobId } = await params;
-  const job = await getJob(jobId);
+  const job = await JobsService.getJob(jobId);
   if (!job) notFound();
 
   return (
