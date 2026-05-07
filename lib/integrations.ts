@@ -1,6 +1,4 @@
 import type { Lead, JobQuery } from "./types";
-import { CustomWebsiteScraper } from "./adapters/custom-website-scraper";
-import { EmailVerificationAdapter } from "./adapters/email-verification-adapter";
 
 export interface PlacesSearchParams {
   query: JobQuery;
@@ -14,7 +12,7 @@ export interface PlacesSearchResult {
 
 /**
  * Search Google Places using the Places API.
- * Uses the OAuth credentials from Google Cloud console.
+ * Requires GOOGLE_PLACES_API_KEY environment variable.
  * Endpoint: https://maps.googleapis.com/maps/api/place/textsearch/json
  */
 export async function searchGooglePlaces(
@@ -28,7 +26,8 @@ export async function searchGooglePlaces(
 
   try {
     const { query } = params;
-    const searchQuery = `${query.industry} ${query.city} ${query.state}`.trim();
+    const businessTypesStr = query.businessTypes.join(", ");
+    const searchQuery = `${businessTypesStr} in ${query.locationText}`.trim();
 
     const response = await fetch(
       `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(searchQuery)}&key=${apiKey}`
@@ -38,22 +37,21 @@ export async function searchGooglePlaces(
       throw new Error(`Google Places API error: ${response.statusText}`);
     }
 
-    const data = (await response.json()) as { results?: Array<{ place_id: string; name: string; formatted_address: string }> };
+    const data = (await response.json()) as {
+      results?: Array<{ place_id: string; name: string; formatted_address: string }>;
+    };
     const leads: Lead[] = (data.results || []).map((place) => ({
-      id: place.place_id,
-      businessName: place.name,
+      id: `lead-${place.place_id}`,
+      jobId: "",
+      placeId: place.place_id,
+      name: place.name,
+      category: query.businessTypes[0] || "business",
       address: place.formatted_address,
-      city: query.city,
-      state: query.state,
-      email: "",
-      phone: "",
-      instagram: "",
-      website: "",
-      aboutExcerpt: "",
-      score: 0,
-      verificationStatus: "pending",
-      lastVerifiedAt: null,
-      createdAt: new Date(),
+      city: query.locationText.split(",")[0],
+      country: "US",
+      leadScore: 50 + Math.random() * 30,
+      icpMatch: false,
+      crawledAt: new Date().toISOString(),
     }));
 
     return { leads, nextPageToken: undefined };
@@ -64,19 +62,61 @@ export async function searchGooglePlaces(
 }
 
 /**
- * Scrape website using custom website scraper adapter.
+ * Scrape website to extract contact information.
+ * Uses internal custom scraper (not a third-party API).
  */
 export async function scrapeWebsite(url: string): Promise<{ html: string }> {
-  const scraper = new CustomWebsiteScraper();
-  return scraper.scrapeWebsite(url);
+  try {
+    const response = await fetch(url, {
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+      },
+    });
+
+    if (!response.ok) {
+      return {
+        html: `<html><body><!-- Error fetching ${url} --></body></html>`,
+      };
+    }
+
+    const html = await response.text();
+    return { html };
+  } catch (error) {
+    console.warn(`[v0] Could not scrape ${url}:`, error);
+    return {
+      html: `<html><body><!-- Error fetching ${url} --></body></html>`,
+    };
+  }
 }
 
 /**
- * Extract lead data from HTML using AI (via Vercel AI Gateway) or regex.
+ * Extract contact information from HTML using regex patterns.
  */
 export async function extractLeadDataFromHtml(
   html: string
 ): Promise<Partial<Lead>> {
-  const emailVerifier = new EmailVerificationAdapter();
-  return emailVerifier.extractContactInfo(html);
+  const emailRegex = /([a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+\.[a-zA-Z0-9_-]+)/gi;
+  const phoneRegex =
+    /(\+?1?\s*\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4})/gi;
+  const instagramRegex =
+    /instagram\.com\/([a-zA-Z0-9_\.]+)/gi;
+  const facebookRegex =
+    /facebook\.com\/([a-zA-Z0-9_\.]+)/gi;
+
+  const emails = [...new Set(html.match(emailRegex) || [])];
+  const phones = [...new Set(html.match(phoneRegex) || [])];
+  const instagramMatches = instagramRegex.exec(html);
+  const facebookMatches = facebookRegex.exec(html);
+
+  return {
+    email: emails[0],
+    phone: phones[0],
+    instagram: instagramMatches
+      ? `https://instagram.com/${instagramMatches[1]}`
+      : undefined,
+    facebook: facebookMatches
+      ? `https://facebook.com/${facebookMatches[1]}`
+      : undefined,
+  };
 }
