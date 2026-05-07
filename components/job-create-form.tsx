@@ -6,9 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
-import { Switch } from "@/components/ui/switch";
-import { Badge } from "@/components/ui/badge";
-import { X, Plus, Loader2, MapPin } from "lucide-react";
+import { Loader2, MapPin } from "lucide-react";
 import type { JobQuery } from "@/lib/types";
 
 interface JobCreateFormProps {
@@ -53,48 +51,30 @@ const BEAUTY_BUSINESS_TYPES: { category: string; types: string[] }[] = [
 
 export function JobCreateForm({ onSubmit }: JobCreateFormProps) {
   const router = useRouter();
-  const [name, setName] = useState("");
   const [location, setLocation] = useState("");
   const [radiusKm, setRadiusKm] = useState(25);
-  const [businessTypes, setBusinessTypes] = useState<string[]>(["brow bar"]);
-  const [typeInput, setTypeInput] = useState("");
-  const [hasWebsite, setHasWebsite] = useState(false);
-  const [minRating, setMinRating] = useState(3.5);
-  const [excludeChains, setExcludeChains] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  function addType(type: string) {
-    const trimmed = type.trim().toLowerCase();
-    if (trimmed && !businessTypes.includes(trimmed)) {
-      setBusinessTypes((prev) => [...prev, trimmed]);
-      setTypeInput("");
-    }
-  }
-
-  function removeType(type: string) {
-    setBusinessTypes((prev) => prev.filter((t) => t !== type));
-  }
+  // Flatten all beauty business types
+  const allBusinessTypes = BEAUTY_BUSINESS_TYPES.flatMap((g) => g.types);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
 
-    if (!name.trim()) return setError("Job name is required.");
     if (!location.trim()) return setError("Location is required.");
-    if (businessTypes.length === 0) return setError("Add at least one business type.");
+
+    // Auto-generate job name from location and timestamp
+    const name = `${location.trim()} — ${new Date().toLocaleDateString("en-US", { year: "2-digit", month: "short" })}`;
 
     const payload = {
-      name: name.trim(),
+      name,
       query: {
-        businessTypes,
+        businessTypes: allBusinessTypes,
         locationText: location.trim(),
         radiusKm,
-        filters: {
-          hasWebsite: hasWebsite || undefined,
-          minRating,
-          excludeChains: excludeChains || undefined,
-        },
+        filters: {},
       },
     };
 
@@ -122,20 +102,6 @@ export function JobCreateForm({ onSubmit }: JobCreateFormProps) {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
-      {/* Job name */}
-      <div className="space-y-1.5">
-        <Label htmlFor="job-name" className="text-sm text-foreground/80">
-          Job Name
-        </Label>
-        <Input
-          id="job-name"
-          placeholder="e.g. LA Brow Bars — Q2 2025"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
-        />
-      </div>
-
       {/* Location */}
       <div className="space-y-1.5">
         <Label htmlFor="location" className="text-sm text-foreground/80">
@@ -153,83 +119,6 @@ export function JobCreateForm({ onSubmit }: JobCreateFormProps) {
         </div>
       </div>
 
-      {/* Business types */}
-      <div className="space-y-2">
-        <Label className="text-sm text-foreground/80">Business Types</Label>
-        <div className="flex flex-wrap gap-2 mb-2">
-          {businessTypes.map((t) => (
-            <Badge
-              key={t}
-              variant="secondary"
-              className="gap-1.5 py-1 pl-2.5 pr-1.5 bg-muted text-foreground border border-border"
-            >
-              {t}
-              <button
-                type="button"
-                onClick={() => removeType(t)}
-                className="rounded-full hover:bg-border p-0.5"
-              >
-                <X className="h-3 w-3" />
-              </button>
-            </Badge>
-          ))}
-        </div>
-        <div className="flex gap-2">
-          <Input
-            placeholder="Add business type..."
-            value={typeInput}
-            onChange={(e) => setTypeInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                addType(typeInput);
-              }
-            }}
-            className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
-          />
-          <Button
-            type="button"
-            variant="outline"
-            size="icon"
-            onClick={(e) => {
-              e.preventDefault();
-              addType(typeInput);
-            }}
-            className="border-border shrink-0"
-          >
-            <Plus className="h-4 w-4" />
-          </Button>
-        </div>
-        <div className="space-y-2 mt-1 max-h-48 overflow-y-auto pr-1">
-          {BEAUTY_BUSINESS_TYPES.map((group) => {
-            const available = group.types.filter((s) => !businessTypes.includes(s));
-            if (available.length === 0) return null;
-            return (
-              <div key={group.category}>
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">
-                  {group.category}
-                </p>
-                <div className="flex flex-wrap gap-1">
-                  {available.map((s) => (
-                    <button
-                      key={s}
-                      type="button"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        setBusinessTypes((prev) => [...prev, s]);
-                      }}
-                      className="text-xs text-muted-foreground hover:text-primary border border-border rounded px-2 py-0.5 hover:border-primary transition-colors bg-muted/30"
-                    >
-                      + {s}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
       {/* Radius */}
       <div className="space-y-2">
         <div className="flex items-center justify-between">
@@ -244,34 +133,6 @@ export function JobCreateForm({ onSubmit }: JobCreateFormProps) {
           onValueChange={([v]) => setRadiusKm(v)}
           className="w-full"
         />
-      </div>
-
-      {/* Min rating */}
-      <div className="space-y-2">
-        <div className="flex items-center justify-between">
-          <Label className="text-sm text-foreground/80">Minimum Rating</Label>
-          <span className="text-sm font-mono text-primary">{minRating.toFixed(1)} ★</span>
-        </div>
-        <Slider
-          min={0}
-          max={5}
-          step={0.5}
-          value={[minRating]}
-          onValueChange={([v]) => setMinRating(v)}
-          className="w-full"
-        />
-      </div>
-
-      {/* Toggles */}
-      <div className="space-y-3 pt-1">
-        <div className="flex items-center justify-between">
-          <Label className="text-sm text-foreground/80">Must have website</Label>
-          <Switch checked={hasWebsite} onCheckedChange={setHasWebsite} />
-        </div>
-        <div className="flex items-center justify-between">
-          <Label className="text-sm text-foreground/80">Exclude chains</Label>
-          <Switch checked={excludeChains} onCheckedChange={setExcludeChains} />
-        </div>
       </div>
 
       {error && (
