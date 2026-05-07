@@ -1,10 +1,10 @@
-import { listJobs } from "@/lib/api";
+import { JobsService } from "@/lib/services/jobs-service";
 import { JobCreateForm } from "@/components/job-create-form";
 import { JobsTableClient } from "@/components/jobs-table-client";
 import { Crosshair, Sparkles, Users, Globe } from "lucide-react";
 
 export default async function HomePage() {
-  const jobs = await listJobs();
+  const jobs = await JobsService.listJobs();
   const recentJobs = jobs.slice(0, 5);
 
   return (
