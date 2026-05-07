@@ -1,8 +1,9 @@
-// Prisma Client singleton
-// Using fallback to null for serverless environment compatibility
-// The database schema is created in Neon and ready for use when DATABASE_URL is set
+import { neon } from '@neondatabase/serverless';
 
+// Create Neon SQL client using DATABASE_URL
+const connectionString = process.env.DATABASE_URL;
+
+export const sql = connectionString ? neon(connectionString) : null;
+
+// Legacy export for compatibility
 export const prisma = null;
-
-
-

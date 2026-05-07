@@ -1,14 +1,14 @@
-import { prisma } from '@/lib/db';
+import { sql } from '@/lib/db';
 import { InMemoryStorage } from '@/lib/storage';
 import type { Job, JobQuery } from '@/lib/types';
 
 export const JobsService = {
   /**
-   * Create a new job in the database or fallback to in-memory storage
+   * Create a new job in the database
    */
   async createJob(input: { name: string; query: JobQuery }): Promise<Job> {
     const id = `job-${Date.now()}`;
-    const now = new Date().toISOString();
+    const now = new Date();
 
     const job: Job = {
       id,
@@ -19,32 +19,24 @@ export const JobsService = {
       websitesScraped: 0,
       leadsEnriched: 0,
       leadsTotal: 0,
-      createdAt: now,
-      updatedAt: now,
+      createdAt: now.toISOString(),
+      updatedAt: now.toISOString(),
     };
 
-    if (prisma) {
+    if (sql) {
       try {
-        const dbJob = await prisma.job.create({
-          data: {
-            id,
-            name: input.name,
-            status: 'queued',
-            query: input.query,
-            placesDiscovered: 0,
-            websitesScraped: 0,
-            leadsEnriched: 0,
-            leadsTotal: 0,
-          },
-        });
-        console.log('[v0] Job created in database:', id);
-        return this.mapJobRow(dbJob);
+        await sql`
+          INSERT INTO "Job" (id, name, status, query, "placesDiscovered", "websitesScraped", "leadsEnriched", "leadsTotal", "createdAt", "updatedAt", "createdBy")
+          VALUES (${id}, ${input.name}, 'queued', ${JSON.stringify(input.query)}, 0, 0, 0, 0, ${now}, ${now}, 'admin')
+        `;
+        console.log('[v0] Job created in Neon database:', id);
+        return job;
       } catch (error) {
-        console.warn('[v0] Database error, using in-memory storage:', error);
+        console.error('[v0] Database error creating job:', error);
       }
     }
 
-    console.log('[v0] Job created in memory:', id);
+    console.log('[v0] Job created in memory (no database):', id);
     return InMemoryStorage.jobs.create(job);
   },
 
@@ -52,14 +44,14 @@ export const JobsService = {
    * Get job by ID
    */
   async getJob(jobId: string): Promise<Job | null> {
-    if (prisma) {
+    if (sql) {
       try {
-        const job = await prisma.job.findUnique({
-          where: { id: jobId },
-        });
-        if (job) return this.mapJobRow(job);
+        const rows = await sql`SELECT * FROM "Job" WHERE id = ${jobId}`;
+        if (rows.length > 0) {
+          return this.mapJobRow(rows[0]);
+        }
       } catch (error) {
-        console.warn('[v0] Database error, falling back to in-memory:', error);
+        console.error('[v0] Database error getting job:', error);
       }
     }
 
@@ -74,29 +66,26 @@ export const JobsService = {
     limit?: number;
     offset?: number;
   }): Promise<{ jobs: Job[]; total: number }> {
-    if (prisma) {
+    const limit = options?.limit || 50;
+    const offset = options?.offset || 0;
+
+    if (sql) {
       try {
-        const [jobs, total] = await Promise.all([
-          prisma.job.findMany({
-            orderBy: { createdAt: 'desc' },
-            take: options?.limit || 50,
-            skip: options?.offset || 0,
-          }),
-          prisma.job.count(),
+        const [jobRows, countRows] = await Promise.all([
+          sql`SELECT * FROM "Job" ORDER BY "createdAt" DESC LIMIT ${limit} OFFSET ${offset}`,
+          sql`SELECT COUNT(*) as count FROM "Job"`,
         ]);
 
         return {
-          jobs: jobs.map(job => this.mapJobRow(job)),
-          total,
+          jobs: jobRows.map((row: any) => this.mapJobRow(row)),
+          total: parseInt(countRows[0]?.count || '0', 10),
         };
       } catch (error) {
-        console.warn('[v0] Database error, falling back to in-memory:', error);
+        console.error('[v0] Database error listing jobs:', error);
       }
     }
 
     const allJobs = InMemoryStorage.jobs.list();
-    const offset = options?.offset || 0;
-    const limit = options?.limit || 50;
     return {
       jobs: allJobs.slice(offset, offset + limit),
       total: allJobs.length,
@@ -107,15 +96,14 @@ export const JobsService = {
    * Update job status
    */
   async updateJobStatus(jobId: string, status: string): Promise<Job | null> {
-    if (prisma) {
+    const now = new Date();
+
+    if (sql) {
       try {
-        const job = await prisma.job.update({
-          where: { id: jobId },
-          data: { status, updatedAt: new Date() },
-        });
-        return this.mapJobRow(job);
+        await sql`UPDATE "Job" SET status = ${status}, "updatedAt" = ${now} WHERE id = ${jobId}`;
+        return this.getJob(jobId);
       } catch (error) {
-        console.warn('[v0] Database error, falling back to in-memory:', error);
+        console.error('[v0] Database error updating job status:', error);
       }
     }
 
@@ -131,21 +119,23 @@ export const JobsService = {
     leads_enriched?: number;
     leads_total?: number;
   }): Promise<void> {
-    if (prisma) {
+    const now = new Date();
+
+    if (sql) {
       try {
-        await prisma.job.update({
-          where: { id: jobId },
-          data: {
-            placesDiscovered: updates.places_discovered,
-            websitesScraped: updates.websites_scraped,
-            leadsEnriched: updates.leads_enriched,
-            leadsTotal: updates.leads_total,
-            updatedAt: new Date(),
-          },
-        });
+        await sql`
+          UPDATE "Job" 
+          SET 
+            "placesDiscovered" = COALESCE(${updates.places_discovered}, "placesDiscovered"),
+            "websitesScraped" = COALESCE(${updates.websites_scraped}, "websitesScraped"),
+            "leadsEnriched" = COALESCE(${updates.leads_enriched}, "leadsEnriched"),
+            "leadsTotal" = COALESCE(${updates.leads_total}, "leadsTotal"),
+            "updatedAt" = ${now}
+          WHERE id = ${jobId}
+        `;
         return;
       } catch (error) {
-        console.warn('[v0] Database error, falling back to in-memory:', error);
+        console.error('[v0] Database error updating job counters:', error);
       }
     }
 
@@ -161,14 +151,16 @@ export const JobsService = {
    * Delete job and associated data
    */
   async deleteJob(jobId: string): Promise<boolean> {
-    if (prisma) {
+    if (sql) {
       try {
-        await prisma.job.delete({
-          where: { id: jobId },
-        });
+        // Delete leads first (foreign key constraint)
+        await sql`DELETE FROM "Lead" WHERE "jobId" = ${jobId}`;
+        await sql`DELETE FROM "Export" WHERE "jobId" = ${jobId}`;
+        await sql`DELETE FROM "ActivityEvent" WHERE "jobId" = ${jobId}`;
+        await sql`DELETE FROM "Job" WHERE id = ${jobId}`;
         return true;
       } catch (error) {
-        console.warn('[v0] Database error, falling back to in-memory:', error);
+        console.error('[v0] Database error deleting job:', error);
       }
     }
 
@@ -180,18 +172,14 @@ export const JobsService = {
    * Get activity events for a job
    */
   async getActivity(jobId: string): Promise<any[]> {
-    if (prisma) {
+    if (sql) {
       try {
-        const events = await prisma.activityEvent.findMany({
-          where: { jobId },
-          orderBy: { timestamp: 'desc' },
-        });
-        return events;
+        const rows = await sql`SELECT * FROM "ActivityEvent" WHERE "jobId" = ${jobId} ORDER BY timestamp DESC`;
+        return rows;
       } catch (error) {
-        console.warn('[v0] Database error fetching activity:', error);
+        console.error('[v0] Database error fetching activity:', error);
       }
     }
-    // For now, return empty array - activity tracking can be added later
     return [];
   },
 
@@ -199,20 +187,17 @@ export const JobsService = {
    * Map database row to Job object
    */
   mapJobRow(row: any): Job {
-    const createdAt = row.createdAt instanceof Date ? row.createdAt.toISOString() : row.createdAt;
-    const updatedAt = row.updatedAt instanceof Date ? row.updatedAt.toISOString() : row.updatedAt;
-
     return {
       id: row.id,
       name: row.name,
       status: row.status,
-      query: row.query as JobQuery,
-      placesDiscovered: row.placesDiscovered,
-      websitesScraped: row.websitesScraped,
-      leadsEnriched: row.leadsEnriched,
-      leadsTotal: row.leadsTotal,
-      createdAt,
-      updatedAt,
+      query: typeof row.query === 'string' ? JSON.parse(row.query) : row.query,
+      placesDiscovered: row.placesDiscovered || 0,
+      websitesScraped: row.websitesScraped || 0,
+      leadsEnriched: row.leadsEnriched || 0,
+      leadsTotal: row.leadsTotal || 0,
+      createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : row.createdAt,
+      updatedAt: row.updatedAt instanceof Date ? row.updatedAt.toISOString() : row.updatedAt,
     };
   },
 };

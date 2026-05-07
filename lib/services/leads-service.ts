@@ -1,10 +1,35 @@
-import { prisma } from '@/lib/db';
+import { sql } from '@/lib/db';
 import { InMemoryStorage } from '@/lib/storage';
 import type { Lead, LeadListFilters, ExportRun, ExportRequestPayload } from '@/lib/types';
 
 export const LeadsService = {
   async addLeads(jobId: string, leads: Lead[]): Promise<void> {
     if (leads.length === 0) return;
+
+    if (sql) {
+      try {
+        for (const lead of leads) {
+          const id = `lead-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+          const now = new Date();
+          await sql`
+            INSERT INTO "Lead" (
+              id, "jobId", "placeId", "businessName", "contactName", category,
+              address, city, state, country, phone, email, "emailVerified",
+              website, rating, "reviewCount", score, "icpMatch", source, "createdAt", "updatedAt"
+            ) VALUES (
+              ${id}, ${jobId}, ${lead.placeId || null}, ${lead.businessName}, ${lead.contactName || null}, ${lead.category || null},
+              ${lead.address || null}, ${lead.city || null}, ${lead.state || null}, ${lead.country || 'USA'}, ${lead.phone || null}, ${lead.email || null}, ${lead.emailVerified || false},
+              ${lead.website || null}, ${lead.rating || null}, ${lead.reviewCount || 0}, ${lead.score || 0}, ${lead.icpMatch || false}, ${lead.source || 'google_places'}, ${now}, ${now}
+            )
+          `;
+        }
+        console.log(`[v0] Added ${leads.length} leads for job ${jobId} to Neon database`);
+        return;
+      } catch (error) {
+        console.error('[v0] Database error adding leads:', error);
+      }
+    }
+
     console.log(`[v0] Added ${leads.length} leads for job ${jobId} to memory`);
     InMemoryStorage.leads.add(jobId, leads);
   },
@@ -21,8 +46,36 @@ export const LeadsService = {
   }> {
     const page = filters?.page || 1;
     const pageSize = filters?.pageSize || 50;
-    const skip = (page - 1) * pageSize;
+    const offset = (page - 1) * pageSize;
 
+    if (sql) {
+      try {
+        const rows = await sql`SELECT * FROM "Lead" WHERE "jobId" = ${jobId} ORDER BY score DESC LIMIT ${pageSize} OFFSET ${offset}`;
+        const countRows = await sql`SELECT COUNT(*) as count FROM "Lead" WHERE "jobId" = ${jobId}`;
+
+        let leads = rows as any[];
+        const total = parseInt(countRows[0]?.count || '0', 10);
+
+        // Apply filters
+        if (filters?.minScore) leads = leads.filter(l => (l.score || 0) >= filters.minScore!);
+        if (filters?.minRating) leads = leads.filter(l => (l.rating || 0) >= filters.minRating!);
+        if (filters?.hasEmail) leads = leads.filter(l => !!l.email);
+        if (filters?.hasWebsite) leads = leads.filter(l => !!l.website);
+        if (filters?.icpMatch) leads = leads.filter(l => l.icpMatch);
+
+        return {
+          leads: leads.map(this.mapLeadRow),
+          total,
+          filtered: leads.length,
+          page,
+          pageSize,
+        };
+      } catch (error) {
+        console.error('[v0] Database error listing leads:', error);
+      }
+    }
+
+    // Fallback to in-memory storage
     let leads = InMemoryStorage.leads.list(jobId);
 
     if (filters?.minScore) leads = leads.filter(l => (l.score || 0) >= filters.minScore!);
@@ -34,7 +87,7 @@ export const LeadsService = {
     leads.sort((a, b) => (b.score || 0) - (a.score || 0));
 
     return {
-      leads: leads.slice(skip, skip + pageSize),
+      leads: leads.slice(offset, offset + pageSize),
       total: leads.length,
       filtered: leads.length,
       page,
@@ -42,10 +95,7 @@ export const LeadsService = {
     };
   },
 
-  async createExport(
-    jobId: string,
-    payload: ExportRequestPayload
-  ): Promise<ExportRun> {
+  async createExport(jobId: string, payload: ExportRequestPayload): Promise<ExportRun> {
     const exportId = `export-${Date.now()}`;
     const filterParts: string[] = [];
 
@@ -63,13 +113,7 @@ export const LeadsService = {
       hasWebsite: payload.mustHaveWebsite,
     });
 
-    const downloadUrl = `/api/jobs/${jobId}/export?${new URLSearchParams(
-      Object.entries(payload)
-        .filter(([, v]) => v !== undefined)
-        .map(([k, v]) => [k, String(v)])
-    ).toString()}`;
-
-    const exportRun: ExportRun = {
+    return {
       id: exportId,
       jobId,
       createdAt: new Date().toISOString(),
@@ -77,32 +121,25 @@ export const LeadsService = {
       filterSummary,
       rowCount: filtered,
       status: 'ready',
-      downloadUrl,
+      downloadUrl: `/api/jobs/${jobId}/export`,
     };
-
-    return exportRun;
   },
 
   async listExports(jobId: string): Promise<ExportRun[]> {
     const { filtered } = await this.listLeads(jobId);
-    return [
-      {
-        id: `export-recent-${jobId}`,
-        jobId,
-        createdAt: new Date().toISOString(),
-        format: 'csv',
-        filterSummary: 'No filters',
-        rowCount: filtered,
-        status: 'ready',
-        downloadUrl: `/api/jobs/${jobId}/export`,
-      },
-    ];
+    return [{
+      id: `export-recent-${jobId}`,
+      jobId,
+      createdAt: new Date().toISOString(),
+      format: 'csv',
+      filterSummary: 'No filters',
+      rowCount: filtered,
+      status: 'ready',
+      downloadUrl: `/api/jobs/${jobId}/export`,
+    }];
   },
 
-  async getExportLeads(
-    jobId: string,
-    payload: ExportRequestPayload
-  ): Promise<Lead[]> {
+  async getExportLeads(jobId: string, payload: ExportRequestPayload): Promise<Lead[]> {
     const { leads } = await this.listLeads(jobId, {
       minScore: payload.minScore,
       minRating: payload.minRating,
@@ -113,11 +150,9 @@ export const LeadsService = {
   },
 
   generateCsv(leads: Lead[]): string {
-    if (leads.length === 0) {
-      return 'Contact Name,Business Name,Email,Phone,Website,Address,City,State,Rating,Score\n';
-    }
-
     const headers = ['Contact Name', 'Business Name', 'Email', 'Phone', 'Website', 'Address', 'City', 'State', 'Rating', 'Score'];
+    if (leads.length === 0) return headers.join(',') + '\n';
+
     const rows = leads.map(lead => [
       this.escapeCsvField(lead.contactName || ''),
       this.escapeCsvField(lead.businessName),
