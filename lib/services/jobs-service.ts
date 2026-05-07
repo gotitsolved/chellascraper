@@ -1,39 +1,54 @@
+import { db as prisma } from '@/lib/db';
 import type { Job, JobQuery } from '@/lib/types';
-
-// In-memory store for jobs
-const jobsStore = new Map<string, Job>();
 
 export const JobsService = {
   /**
-   * Create a new job
+   * Create a new job in the database
    */
   async createJob(input: { name: string; query: JobQuery }): Promise<Job> {
+    if (!prisma) {
+      throw new Error('Database not initialized');
+    }
+
     const id = `job-${Date.now()}`;
-    const now = new Date().toISOString();
 
-    const job: Job = {
-      id,
-      name: input.name,
-      status: 'queued',
-      query: input.query,
-      placesDiscovered: 0,
-      websitesScraped: 0,
-      leadsEnriched: 0,
-      leadsTotal: 0,
-      createdAt: now,
-      updatedAt: now,
-    };
+    const job = await prisma.job.create({
+      data: {
+        id,
+        name: input.name,
+        status: 'queued',
+        query: input.query,
+        placesDiscovered: 0,
+        websitesScraped: 0,
+        leadsEnriched: 0,
+        leadsTotal: 0,
+      },
+    });
 
-    jobsStore.set(id, job);
-    console.log('[v0] Job created:', id);
-    return job;
+    console.log('[v0] Job created in database:', id);
+    return this.mapJobRow(job);
   },
 
   /**
    * Get job by ID
    */
   async getJob(jobId: string): Promise<Job | null> {
-    return jobsStore.get(jobId) || null;
+    if (!prisma) {
+      console.error('[v0] Database not initialized');
+      return null;
+    }
+
+    try {
+      const job = await prisma.job.findUnique({
+        where: { id: jobId },
+      });
+
+      if (!job) return null;
+      return this.mapJobRow(job);
+    } catch (error) {
+      console.error('[v0] Error getting job:', error);
+      return null;
+    }
   },
 
   /**
@@ -44,28 +59,49 @@ export const JobsService = {
     limit?: number;
     offset?: number;
   }): Promise<{ jobs: Job[]; total: number }> {
-    const jobs = Array.from(jobsStore.values())
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-      .slice(options?.offset || 0, (options?.offset || 0) + (options?.limit || 50));
+    if (!prisma) {
+      return { jobs: [], total: 0 };
+    }
 
-    return {
-      jobs,
-      total: jobsStore.size,
-    };
+    try {
+      const [jobs, total] = await Promise.all([
+        prisma.job.findMany({
+          orderBy: { createdAt: 'desc' },
+          take: options?.limit || 50,
+          skip: options?.offset || 0,
+        }),
+        prisma.job.count(),
+      ]);
+
+      return {
+        jobs: jobs.map(job => this.mapJobRow(job)),
+        total,
+      };
+    } catch (error) {
+      console.error('[v0] Error listing jobs:', error);
+      return { jobs: [], total: 0 };
+    }
   },
 
   /**
    * Update job status
    */
   async updateJobStatus(jobId: string, status: string): Promise<Job | null> {
-    const job = jobsStore.get(jobId);
-    if (!job) return null;
+    if (!prisma) {
+      return null;
+    }
 
-    job.status = status;
-    job.updatedAt = new Date().toISOString();
-    jobsStore.set(jobId, job);
+    try {
+      const job = await prisma.job.update({
+        where: { id: jobId },
+        data: { status, updatedAt: new Date() },
+      });
 
-    return job;
+      return this.mapJobRow(job);
+    } catch (error) {
+      console.error('[v0] Error updating job status:', error);
+      return null;
+    }
   },
 
   /**
@@ -77,65 +113,60 @@ export const JobsService = {
     leads_enriched?: number;
     leads_total?: number;
   }): Promise<void> {
-    const job = jobsStore.get(jobId);
-    if (!job) return;
+    if (!prisma) {
+      return;
+    }
 
-    if (updates.places_discovered !== undefined) job.placesDiscovered = updates.places_discovered;
-    if (updates.websites_scraped !== undefined) job.websitesScraped = updates.websites_scraped;
-    if (updates.leads_enriched !== undefined) job.leadsEnriched = updates.leads_enriched;
-    if (updates.leads_total !== undefined) job.leadsTotal = updates.leads_total;
-
-    job.updatedAt = new Date().toISOString();
-    jobsStore.set(jobId, job);
+    try {
+      await prisma.job.update({
+        where: { id: jobId },
+        data: {
+          placesDiscovered: updates.places_discovered,
+          websitesScraped: updates.websites_scraped,
+          leadsEnriched: updates.leads_enriched,
+          leadsTotal: updates.leads_total,
+          updatedAt: new Date(),
+        },
+      });
+    } catch (error) {
+      console.error('[v0] Error updating job counters:', error);
+    }
   },
 
   /**
-   * Delete job
+   * Delete job and associated data
    */
   async deleteJob(jobId: string): Promise<boolean> {
-    return jobsStore.delete(jobId);
+    if (!prisma) {
+      return false;
+    }
+
+    try {
+      await prisma.job.delete({
+        where: { id: jobId },
+      });
+      return true;
+    } catch (error) {
+      console.error('[v0] Error deleting job:', error);
+      return false;
+    }
   },
 
   /**
-   * Helper to map database rows to Job objects (unused with in-memory store)
+   * Map database row to Job object
    */
   mapJobRow(row: any): Job {
     return {
       id: row.id,
       name: row.name,
       status: row.status,
-      query: {
-        locationText: row.location_text,
-        radiusKm: row.radius_km,
-        businessTypes: row.business_types || [],
-      },
-      placesDiscovered: row.places_discovered || 0,
-      websitesScraped: row.websites_scraped || 0,
-      leadsEnriched: row.leads_enriched || 0,
-      leadsTotal: row.leads_total || 0,
-      updatedAt: new Date().toISOString(),
-    };
-  },
-
-  /**
-   * Helper to map database rows to Job objects (unused with in-memory store)
-   */
-  mapJobRow(row: any): Job {
-    return {
-      id: row.id,
-      name: row.name,
-      status: row.status,
-      query: {
-        locationText: row.location_text,
-        radiusKm: row.radius_km,
-        businessTypes: row.business_types || [],
-      },
-      placesDiscovered: row.places_discovered || 0,
-      websitesScraped: row.websites_scraped || 0,
-      leadsEnriched: row.leads_enriched || 0,
-      leadsTotal: row.leads_total || 0,
-      createdAt: row.created_at,
-      updatedAt: row.last_run_at || row.created_at,
+      query: row.query as JobQuery,
+      placesDiscovered: row.placesDiscovered,
+      websitesScraped: row.websitesScraped,
+      leadsEnriched: row.leadsEnriched,
+      leadsTotal: row.leadsTotal,
+      createdAt: row.createdAt.toISOString(),
+      updatedAt: row.updatedAt.toISOString(),
     };
   },
 };

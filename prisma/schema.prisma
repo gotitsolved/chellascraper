@@ -4,57 +4,72 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = env("POSTGRES_URL")
+  url      = env("DATABASE_URL")
 }
 
 model Job {
-  id        String   @id @default(cuid())
-  name      String
-  status    String   @default("completed") // completed, running, failed
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  createdBy String?
-  lastRunAt DateTime?
+  id            String   @id
+  name          String
+  status        String   @default("queued") // queued, running, completed, failed
+  query         Json // { locationText, radiusKm, businessTypes[] }
   
-  query     Json // { businessTypes, locationText, radiusKm, filters }
-  counters  Json // { placesDiscovered, websitesScraped, leadsEnriched, leadsTotal }
-  errorMessage String?
+  // Counters
+  placesDiscovered  Int  @default(0)
+  websitesScraped   Int  @default(0)
+  leadsEnriched     Int  @default(0)
+  leadsTotal        Int  @default(0)
   
-  leads     Lead[]
-  exports   Export[]
-  activity  ActivityEvent[]
+  // Error handling
+  errorMessage  String?
+  
+  // Relationships
+  leads         Lead[]
+  exports       Export[]
+  activity      ActivityEvent[]
+  
+  // Metadata
+  createdBy     String   @default("admin")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  lastRunAt     DateTime?
 
   @@index([status])
   @@index([createdAt])
 }
 
 model Lead {
-  id        String   @id @default(cuid())
-  jobId     String
-  job       Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  id              String   @id
+  jobId           String
+  job             Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
   
-  businessName String
-  contactName  String?
-  email        String?
-  phone        String?
-  website      String?
-  address      String?
-  city         String?
-  state        String?
-  country      String?
+  // Business info
+  placeId         String?
+  businessName    String
+  contactName     String?
+  category        String?
   
-  rating       Float?
-  reviewCount  Int?
-  source       String? // "google_places", "direct_scrape"
+  // Location
+  address         String?
+  city            String?
+  state           String?
+  country         String   @default("USA")
   
-  // Email verification
-  emailStatus  String? // "verified", "invalid", "unverified"
+  // Contact info
+  phone           String?
+  email           String?
+  emailVerified   Boolean  @default(false)
+  website         String?
   
-  // ICP scoring
-  score        Float? @default(0)
+  // Ratings & scoring
+  rating          Float?
+  reviewCount     Int      @default(0)
+  score           Float    @default(0)
+  icpMatch        Boolean  @default(false)
   
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  // Metadata
+  source          String   @default("google_places")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   @@index([jobId])
   @@index([email])
@@ -62,26 +77,27 @@ model Lead {
 }
 
 model Export {
-  id           String   @id @default(cuid())
-  jobId        String
-  job          Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  id              String   @id
+  jobId           String
+  job             Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
   
-  format       String   @default("csv")
-  createdAt    DateTime @default(now())
-  status       String   @default("ready") // ready, generating, failed
-  filterSummary String?
-  rowCount     Int
-  downloadUrl  String?
+  format          String   @default("csv")
+  filterSummary   String   @default("")
+  rowCount        Int      @default(0)
+  status          String   @default("ready")
+  downloadUrl     String?
+  
+  createdAt       DateTime @default(now())
 
   @@index([jobId])
 }
 
 model ActivityEvent {
-  id        String   @id @default(cuid())
+  id        String   @id
   jobId     String
   job       Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
   
-  type      String   // "job_created", "discovery_started", "scraping_started", etc
+  type      String   // "job_created", "discovery_started", etc
   message   String
   timestamp DateTime @default(now())
 

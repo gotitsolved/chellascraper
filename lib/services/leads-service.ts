@@ -1,16 +1,39 @@
+import { db as prisma } from '@/lib/db';
 import type { Lead, LeadListFilters, ExportRun, ExportRequestPayload } from '@/lib/types';
-
-// In-memory stores
-const leadsStore = new Map<string, Lead[]>();
-const exportsStore = new Map<string, ExportRun>();
 
 export const LeadsService = {
   async addLeads(jobId: string, leads: Lead[]): Promise<void> {
     if (leads.length === 0) return;
-    
-    const existing = leadsStore.get(jobId) || [];
-    leadsStore.set(jobId, [...existing, ...leads]);
-    console.log(`[v0] Added ${leads.length} leads for job ${jobId}`);
+
+    try {
+      await prisma.lead.createMany({
+        data: leads.map(lead => ({
+          id: `lead-${Date.now()}-${Math.random()}`,
+          jobId,
+          placeId: lead.placeId,
+          businessName: lead.businessName,
+          contactName: lead.contactName,
+          category: lead.category,
+          address: lead.address,
+          city: lead.city,
+          state: lead.state,
+          country: lead.country || 'USA',
+          phone: lead.phone,
+          email: lead.email,
+          emailVerified: lead.emailVerified,
+          website: lead.website,
+          rating: lead.rating,
+          reviewCount: lead.reviewCount,
+          score: lead.score,
+          icpMatch: lead.icpMatch,
+          source: lead.source,
+        })),
+      });
+
+      console.log(`[v0] Added ${leads.length} leads for job ${jobId}`);
+    } catch (error) {
+      console.error('[v0] Error adding leads:', error);
+    }
   },
 
   async listLeads(
@@ -25,39 +48,50 @@ export const LeadsService = {
   }> {
     const page = filters?.page || 1;
     const pageSize = filters?.pageSize || 50;
-    const offset = (page - 1) * pageSize;
+    const skip = (page - 1) * pageSize;
 
-    let leads = leadsStore.get(jobId) || [];
+    try {
+      // Build where clause
+      const where: any = { jobId };
 
-    // Apply filters
-    if (filters?.minScore) {
-      leads = leads.filter(l => l.score >= filters.minScore!);
-    }
-    if (filters?.minRating) {
-      leads = leads.filter(l => (l.rating || 0) >= filters.minRating!);
-    }
-    if (filters?.hasEmail) {
-      leads = leads.filter(l => !!l.email);
-    }
-    if (filters?.hasWebsite) {
-      leads = leads.filter(l => !!l.website);
-    }
-    if (filters?.icpMatch) {
-      leads = leads.filter(l => l.icpMatch);
-    }
+      if (filters?.minScore) {
+        where.score = { gte: filters.minScore };
+      }
+      if (filters?.minRating) {
+        where.rating = { gte: filters.minRating };
+      }
+      if (filters?.hasEmail) {
+        where.email = { not: null };
+      }
+      if (filters?.hasWebsite) {
+        where.website = { not: null };
+      }
+      if (filters?.icpMatch) {
+        where.icpMatch = true;
+      }
 
-    // Sort by score
-    leads = leads.sort((a, b) => (b.score || 0) - (a.score || 0));
+      const [leads, filtered, total] = await Promise.all([
+        prisma.lead.findMany({
+          where,
+          orderBy: { score: 'desc' },
+          skip,
+          take: pageSize,
+        }),
+        prisma.lead.count({ where }),
+        prisma.lead.count({ where: { jobId } }),
+      ]);
 
-    const paginated = leads.slice(offset, offset + pageSize);
-
-    return {
-      leads: paginated,
-      total: leadsStore.get(jobId)?.length || 0,
-      filtered: leads.length,
-      page,
-      pageSize,
-    };
+      return {
+        leads: leads.map(l => this.mapLeadRow(l)),
+        total,
+        filtered,
+        page,
+        pageSize,
+      };
+    } catch (error) {
+      console.error('[v0] Error listing leads:', error);
+      return { leads: [], total: 0, filtered: 0, page, pageSize };
+    }
   },
 
   async createExport(
@@ -82,23 +116,37 @@ export const LeadsService = {
       hasWebsite: payload.mustHaveWebsite,
     });
 
-    const exportRun: ExportRun = {
-      id: exportId,
-      jobId,
-      createdAt: new Date().toISOString(),
-      format: 'csv',
-      filterSummary,
-      rowCount: filtered,
-      status: 'ready',
-      downloadUrl: `/api/jobs/${jobId}/export?${new URLSearchParams(
-        Object.entries(payload)
-          .filter(([, v]) => v !== undefined)
-          .map(([k, v]) => [k, String(v)])
-      ).toString()}`,
-    };
+    try {
+      const exportRun = await prisma.export.create({
+        data: {
+          id: exportId,
+          jobId,
+          format: 'csv',
+          filterSummary,
+          rowCount: filtered,
+          status: 'ready',
+          downloadUrl: `/api/jobs/${jobId}/export?${new URLSearchParams(
+            Object.entries(payload)
+              .filter(([, v]) => v !== undefined)
+              .map(([k, v]) => [k, String(v)])
+          ).toString()}`,
+        },
+      });
 
-    exportsStore.set(exportId, exportRun);
-    return exportRun;
+      return {
+        id: exportRun.id,
+        jobId: exportRun.jobId,
+        createdAt: exportRun.createdAt.toISOString(),
+        format: exportRun.format,
+        filterSummary: exportRun.filterSummary,
+        rowCount: exportRun.rowCount,
+        status: exportRun.status,
+        downloadUrl: exportRun.downloadUrl || undefined,
+      };
+    } catch (error) {
+      console.error('[v0] Error creating export:', error);
+      throw error;
+    }
   },
 
   async getExportLeads(
@@ -151,10 +199,10 @@ export const LeadsService = {
   mapLeadRow(row: any): Lead {
     return {
       id: row.id,
-      jobId: row.job_id,
-      placeId: row.place_id,
-      businessName: row.business_name,
-      contactName: row.contact_name,
+      jobId: row.jobId,
+      placeId: row.placeId,
+      businessName: row.businessName,
+      contactName: row.contactName,
       category: row.category,
       address: row.address,
       city: row.city,
@@ -162,14 +210,14 @@ export const LeadsService = {
       country: row.country || 'USA',
       phone: row.phone,
       email: row.email,
-      emailVerified: row.email_verified,
+      emailVerified: row.emailVerified,
       website: row.website,
       rating: row.rating,
-      reviewCount: row.review_count || 0,
-      score: row.score || 0,
-      icpMatch: row.icp_match,
-      source: row.source || 'google_places',
-      createdAt: row.created_at,
+      reviewCount: row.reviewCount,
+      score: row.score,
+      icpMatch: row.icpMatch,
+      source: row.source,
+      createdAt: row.createdAt?.toISOString?.() || new Date().toISOString(),
     };
   },
 };
