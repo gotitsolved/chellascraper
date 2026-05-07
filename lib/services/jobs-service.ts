@@ -2,11 +2,12 @@
  * Jobs Service
  * 
  * Handles job creation, retrieval, and status management.
- * Uses in-memory storage for development (mock-data.ts).
+ * Uses persistent file-based storage for serverless environments.
  */
 
-import type { Job, JobQuery, JobStatus, ActivityEvent } from "@/lib/types";
+import type { Job, JobQuery, JobStatus, ActivityEvent, Settings } from "@/lib/types";
 import { jobsStore, leadsStore, exportsStore, createJobInStore, getActivityForJob } from "@/lib/mock-data";
+import { readJobs, writeJobs, readLeads, writeLeads, readExports, writeExports } from "@/lib/persistent-store";
 
 /**
  * Create a new job with the given name and query parameters.
@@ -19,12 +20,30 @@ export class JobsService {
     return createJobInStore(input);
   }
 
-  /**
-   * Retrieve a job by ID.
-   */
-  static async getJob(jobId: string): Promise<Job | null> {
-    return jobsStore.get(jobId) || null;
-  }
+/**
+ * Create a new job with the given name and query parameters.
+ */
+static async createJob(input: {
+  name: string;
+  query: JobQuery;
+}): Promise<Job> {
+  const job = createJobInStore(input);
+  
+  // Persist to file storage
+  const jobs = await readJobs();
+  jobs.set(job.id, job);
+  await writeJobs(jobs);
+  
+  return job;
+}
+
+/**
+ * Retrieve a job by ID.
+ */
+static async getJob(jobId: string): Promise<Job | null> {
+  const jobs = await readJobs();
+  return jobs.get(jobId) || null;
+}
 
   /**
    * List all jobs with optional filtering and pagination.
@@ -34,7 +53,7 @@ export class JobsService {
     limit?: number;
     offset?: number;
   }): Promise<{ jobs: Job[]; total: number }> {
-    let jobs = Array.from(jobsStore.values());
+    let jobs = Array.from((await readJobs()).values());
 
     // Filter by status if provided
     if (options?.status) {
@@ -67,11 +86,13 @@ export class JobsService {
     jobId: string,
     status: JobStatus
   ): Promise<Job | null> {
-    const job = jobsStore.get(jobId);
+    const jobs = await readJobs();
+    const job = jobs.get(jobId);
     if (!job) return null;
 
     job.status = status;
-    jobsStore.set(jobId, job);
+    jobs.set(jobId, job);
+    await writeJobs(jobs);
     return job;
   }
 
@@ -86,9 +107,18 @@ export class JobsService {
    * Delete a job and its associated leads.
    */
   static async deleteJob(jobId: string): Promise<boolean> {
-    jobsStore.delete(jobId);
-    leadsStore.delete(jobId);
-    exportsStore.delete(jobId);
+    const jobs = await readJobs();
+    const leads = await readLeads();
+    const exports_data = await readExports();
+    
+    jobs.delete(jobId);
+    leads.delete(jobId);
+    exports_data.delete(jobId);
+    
+    await writeJobs(jobs);
+    await writeLeads(leads);
+    await writeExports(exports_data);
+    
     return true;
   }
 }

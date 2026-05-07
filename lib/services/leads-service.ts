@@ -2,11 +2,12 @@
  * Leads Service
  * 
  * Handles lead data retrieval, filtering, and scoring.
- * Uses mock data from mock-data.ts.
+ * Uses persistent file-based storage for serverless environments.
  */
 
 import type { Lead, LeadListFilters, ExportRun, ExportRequestPayload } from "@/lib/types";
 import { leadsStore, exportsStore } from "@/lib/mock-data";
+import { readLeads, writeLeads, readExports, writeExports } from "@/lib/persistent-store";
 
 export class LeadsService {
   /**
@@ -22,7 +23,8 @@ export class LeadsService {
     page: number;
     pageSize: number;
   }> {
-    let leads = leadsStore.get(jobId) || [];
+    const leadsMap = await readLeads();
+    let leads = leadsMap.get(jobId) || [];
     const total = leads.length;
 
     // Apply filters
@@ -84,7 +86,8 @@ export class LeadsService {
    * List exports for a job.
    */
   static async listExports(jobId: string): Promise<ExportRun[]> {
-    return exportsStore.get(jobId) || [];
+    const exportsMap = await readExports();
+    return exportsMap.get(jobId) || [];
   }
 
   /**
@@ -128,8 +131,10 @@ export class LeadsService {
       ).toString()}`,
     };
 
-    const existing = exportsStore.get(jobId) || [];
-    exportsStore.set(jobId, [exportRun, ...existing]);
+    const exportsMap = await readExports();
+    const existing = exportsMap.get(jobId) || [];
+    exportsMap.set(jobId, [exportRun, ...existing]);
+    await writeExports(exportsMap);
 
     return exportRun;
   }
