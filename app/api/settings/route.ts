@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { settingsStore } from "@/lib/services/jobs-service";
-import type { AppSettings } from "@/lib/types";
+import type { Settings } from "@/lib/types";
 
 export async function GET() {
   try {
@@ -16,7 +16,7 @@ export async function GET() {
 
 export async function PATCH(req: NextRequest) {
   try {
-    const partial = (await req.json()) as Partial<AppSettings>;
+    const partial = (await req.json()) as Partial<Settings>;
 
     // Update settings store
     Object.assign(settingsStore, partial);
