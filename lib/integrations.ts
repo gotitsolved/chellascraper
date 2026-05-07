@@ -1,223 +1,189 @@
-import type { Lead, JobQuery } from "./types";
+/**
+ * External Integrations
+ * 
+ * Interfaces with Google Places API and web scraping
+ * to gather real business data and contact information
+ */
 
-export interface PlacesSearchParams {
-  query: JobQuery;
-  pageToken?: string;
-}
-
-export interface PlacesSearchResult {
-  leads: Lead[];
-  nextPageToken?: string;
+export interface GooglePlace {
+  place_id: string;
+  business_name: string;
+  contact_name?: string;
+  category?: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  country?: string;
+  phone?: string;
+  website?: string;
+  rating?: number;
+  review_count?: number;
 }
 
 /**
- * Search Google Places using the Places API v1 (New).
- * Uses POST with FieldMask for phone, website, address in one round-trip.
- * Paginates up to 3 pages (60 results max).
+ * Search Google Places API for businesses matching the query
  */
-export async function searchGooglePlaces(
-  params: PlacesSearchParams
-): Promise<PlacesSearchResult> {
+export async function searchGooglePlaces(params: {
+  location: string;
+  radiusKm: number;
+  businessTypes: string[];
+  maxResults?: number;
+}): Promise<GooglePlace[]> {
   const apiKey = process.env.GOOGLE_PLACES_API_KEY;
+
   if (!apiKey) {
-    console.warn("[v0] GOOGLE_PLACES_API_KEY not configured, using mock data");
-    return { leads: [], nextPageToken: undefined };
+    console.warn('[v0] GOOGLE_PLACES_API_KEY not configured');
+    return [];
   }
 
   try {
-    const { query } = params;
-    const businessTypesStr = query.businessTypes.join(", ");
-    const searchQuery = `${businessTypesStr} in ${query.locationText}`.trim();
+    const { location, businessTypes, maxResults = 50 } = params;
+    const businessTypesStr = businessTypes.length > 0 
+      ? businessTypes.join(', ') 
+      : 'businesses';
+    const searchQuery = `${businessTypesStr} in ${location}`;
+
+    console.log('[v0] Searching Google Places for:', searchQuery);
 
     const fieldMask = [
-      "places.id",
-      "places.displayName",
-      "places.formattedAddress",
-      "places.addressComponents",
-      "places.nationalPhoneNumber",
-      "places.internationalPhoneNumber",
-      "places.websiteUri",
-      "places.rating",
-      "places.userRatingCount",
-      "places.businessStatus",
-      "places.types",
-      "places.primaryType",
-      "nextPageToken",
-    ].join(",");
+      'places.id',
+      'places.displayName',
+      'places.formattedAddress',
+      'places.addressComponents',
+      'places.nationalPhoneNumber',
+      'places.internationalPhoneNumber',
+      'places.websiteUri',
+      'places.rating',
+      'places.userRatingCount',
+      'places.businessStatus',
+      'places.types',
+      'places.primaryType',
+      'nextPageToken',
+    ].join(',');
 
-    const results: PlaceV1[] = [];
-    let pageToken: string | undefined = params.pageToken;
-    let guard = 0;
-
-    do {
-      const response = await fetch(
-        "https://places.googleapis.com/v1/places:searchText",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "X-Goog-Api-Key": apiKey,
-            "X-Goog-FieldMask": fieldMask,
-          },
-          body: JSON.stringify({
-            textQuery: searchQuery,
-            pageSize: 20,
-            ...(pageToken ? { pageToken } : {}),
-          }),
-        }
-      );
-
-      if (!response.ok) {
-        const body = await response.text();
-        console.error("[v0] Places API v1 error:", response.status, body);
-        break;
-      }
-
-      const data = (await response.json()) as {
-        places?: PlaceV1[];
-        nextPageToken?: string;
-      };
-      results.push(...(data.places ?? []));
-      pageToken = data.nextPageToken;
-
-      if (pageToken) await new Promise((r) => setTimeout(r, 2000));
-      guard++;
-    } while (pageToken && guard < 3);
-
-    const leads: Lead[] = results
-      .filter((p) => p.businessStatus === "OPERATIONAL")
-      .map((p) => {
-        const city = componentOf(p.addressComponents, ["locality", "postal_town"]);
-        const region = componentShortOf(p.addressComponents, [
-          "administrative_area_level_1",
-        ]);
-        const country = componentShortOf(p.addressComponents, ["country"]) ?? "US";
-
-        return {
-          id: `lead-${p.id}`,
-          jobId: "",
-          placeId: p.id,
-          name: p.displayName?.text ?? "Unknown",
-          category: query.businessTypes[0] || "business",
-          address: p.formattedAddress,
-          city: city ?? query.locationText.split(",")[0],
-          country,
-          region,
-          phone: p.nationalPhoneNumber || p.internationalPhoneNumber,
-          website: p.websiteUri,
-          rating: p.rating,
-          ratingCount: p.userRatingCount,
-          leadScore: 50 + Math.random() * 30,
-          icpMatch: false,
-          crawledAt: new Date().toISOString(),
-        };
-      });
-
-    return { leads, nextPageToken: pageToken };
-  } catch (error) {
-    console.error("[v0] Google Places API error:", error);
-    return { leads: [], nextPageToken: undefined };
-  }
-}
-
-interface AddressComponent {
-  longText?: string;
-  shortText?: string;
-  types?: string[];
-}
-
-interface PlaceV1 {
-  id?: string;
-  displayName?: { text?: string; languageCode?: string };
-  formattedAddress?: string;
-  addressComponents?: AddressComponent[];
-  nationalPhoneNumber?: string;
-  internationalPhoneNumber?: string;
-  websiteUri?: string;
-  rating?: number;
-  userRatingCount?: number;
-  businessStatus?: string;
-  types?: string[];
-  primaryType?: string;
-}
-
-function componentOf(
-  comps: AddressComponent[] | undefined,
-  wantedTypes: string[]
-) {
-  for (const c of comps ?? []) {
-    if (c.types?.some((t) => wantedTypes.includes(t))) return c.longText;
-  }
-  return undefined;
-}
-
-function componentShortOf(
-  comps: AddressComponent[] | undefined,
-  wantedTypes: string[]
-) {
-  for (const c of comps ?? []) {
-    if (c.types?.some((t) => wantedTypes.includes(t)))
-      return c.shortText ?? c.longText;
-  }
-  return undefined;
-}
-
-/**
- * Scrape website to extract contact information.
- * Uses internal custom scraper (not a third-party API).
- */
-export async function scrapeWebsite(url: string): Promise<{ html: string }> {
-  try {
-    const response = await fetch(url, {
+    const response = await fetch('https://places.googleapis.com/v1/places:searchText', {
+      method: 'POST',
       headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        'Content-Type': 'application/json',
+        'X-Goog-Api-Key': apiKey,
+        'X-Goog-FieldMask': fieldMask,
       },
+      body: JSON.stringify({
+        textQuery: searchQuery,
+        pageSize: Math.min(20, maxResults),
+      }),
     });
 
     if (!response.ok) {
-      return {
-        html: `<html><body><!-- Error fetching ${url} --></body></html>`,
-      };
+      const errorText = await response.text();
+      console.error('[v0] Google Places API error:', response.status, errorText);
+      return [];
     }
 
-    const html = await response.text();
-    return { html };
-  } catch (error) {
-    console.warn(`[v0] Could not scrape ${url}:`, error);
-    return {
-      html: `<html><body><!-- Error fetching ${url} --></body></html>`,
+    const data = (await response.json()) as {
+      places?: any[];
+      nextPageToken?: string;
     };
+
+    const places = data.places || [];
+    console.log(`[v0] Found ${places.length} places from Google Places API`);
+
+    return places
+      .filter((p: any) => p.businessStatus === 'OPERATIONAL')
+      .slice(0, maxResults)
+      .map((p: any) => ({
+        place_id: p.id,
+        business_name: p.displayName?.text || 'Unknown',
+        category: businessTypes[0] || 'business',
+        address: p.formattedAddress,
+        city: extractCity(p.addressComponents, location),
+        state: extractState(p.addressComponents),
+        country: extractCountry(p.addressComponents) || 'USA',
+        phone: p.nationalPhoneNumber || p.internationalPhoneNumber,
+        website: p.websiteUri,
+        rating: p.rating,
+        review_count: p.userRatingCount,
+      }));
+  } catch (error) {
+    console.error('[v0] Google Places API error:', error);
+    return [];
   }
 }
 
 /**
- * Extract contact information from HTML using regex patterns.
+ * Scrape website to extract HTML content
  */
-export async function extractLeadDataFromHtml(
-  html: string
-): Promise<Partial<Lead>> {
-  const emailRegex = /([a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+\.[a-zA-Z0-9_-]+)/gi;
-  const phoneRegex =
-    /(\+?1?\s*\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4})/gi;
-  const instagramRegex =
-    /instagram\.com\/([a-zA-Z0-9_\.]+)/gi;
-  const facebookRegex =
-    /facebook\.com\/([a-zA-Z0-9_\.]+)/gi;
+export async function scrapeWebsite(url: string): Promise<string> {
+  if (!url || !url.startsWith('http')) {
+    return '';
+  }
 
-  const emails = [...new Set(html.match(emailRegex) || [])];
-  const phones = [...new Set(html.match(phoneRegex) || [])];
-  const instagramMatches = instagramRegex.exec(html);
-  const facebookMatches = facebookRegex.exec(html);
+  try {
+    console.log('[v0] Scraping website:', url);
 
-  return {
-    email: emails[0],
-    phone: phones[0],
-    instagram: instagramMatches
-      ? `https://instagram.com/${instagramMatches[1]}`
-      : undefined,
-    facebook: facebookMatches
-      ? `https://facebook.com/${facebookMatches[1]}`
-      : undefined,
-  };
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+      },
+      timeout: 10000,
+    });
+
+    if (!response.ok) {
+      console.warn(`[v0] Failed to scrape ${url}: HTTP ${response.status}`);
+      return '';
+    }
+
+    const html = await response.text();
+    console.log(`[v0] Scraped ${html.length} bytes from ${url}`);
+    return html;
+  } catch (error) {
+    console.warn(`[v0] Error scraping ${url}:`, error);
+    return '';
+  }
+}
+
+/**
+ * Extract city from address components
+ */
+function extractCity(components: any[] | undefined, fallback: string): string {
+  if (!components) return fallback.split(',')[0];
+
+  for (const comp of components) {
+    if (comp.types?.includes('locality') || comp.types?.includes('postal_town')) {
+      return comp.longText || fallback.split(',')[0];
+    }
+  }
+
+  return fallback.split(',')[0];
+}
+
+/**
+ * Extract state from address components
+ */
+function extractState(components: any[] | undefined): string | undefined {
+  if (!components) return undefined;
+
+  for (const comp of components) {
+    if (comp.types?.includes('administrative_area_level_1')) {
+      return comp.shortText || comp.longText;
+    }
+  }
+
+  return undefined;
+}
+
+/**
+ * Extract country from address components
+ */
+function extractCountry(components: any[] | undefined): string | undefined {
+  if (!components) return undefined;
+
+  for (const comp of components) {
+    if (comp.types?.includes('country')) {
+      return comp.shortText || comp.longText;
+    }
+  }
+
+  return undefined;
 }

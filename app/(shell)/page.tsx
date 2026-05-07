@@ -1,12 +1,10 @@
-import { JobsService } from "@/lib/services/jobs-service";
+export const dynamic = 'force-dynamic';
+
 import { JobCreateForm } from "@/components/job-create-form";
 import { JobsTableClient } from "@/components/jobs-table-client";
 import { Crosshair, Sparkles, Users, Globe } from "lucide-react";
 
-export default async function HomePage() {
-  const result = await JobsService.listJobs();
-  const recentJobs = result.jobs.slice(0, 5);
-
+export default function HomePage() {
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-8">
       {/* Hero */}
@@ -67,7 +65,7 @@ export default async function HomePage() {
               View all jobs
             </a>
           </div>
-          <JobsTableClient jobs={recentJobs} />
+          <JobsTableClient />
         </div>
       </div>
     </div>
