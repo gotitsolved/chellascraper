@@ -39,9 +39,14 @@ export function JobCreateForm({ onSubmit }: JobCreateFormProps) {
   const [error, setError] = useState<string | null>(null);
 
   function addType(type: string) {
+    console.log("[v0] addType called with:", type);
     const trimmed = type.trim().toLowerCase();
+    console.log("[v0] trimmed:", trimmed, "already exists:", businessTypes.includes(trimmed));
     if (trimmed && !businessTypes.includes(trimmed)) {
-      setBusinessTypes((prev) => [...prev, trimmed]);
+      setBusinessTypes((prev) => {
+        console.log("[v0] Adding type, prev:", prev, "new:", [...prev, trimmed]);
+        return [...prev, trimmed];
+      });
     }
     setTypeInput("");
   }
@@ -53,6 +58,7 @@ export function JobCreateForm({ onSubmit }: JobCreateFormProps) {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    console.log("[v0] handleSubmit called, businessTypes:", businessTypes, "name:", name, "location:", location);
 
     if (!name.trim()) return setError("Job name is required.");
     if (!location.trim()) return setError("Location is required.");
