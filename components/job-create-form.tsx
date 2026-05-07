@@ -15,15 +15,41 @@ interface JobCreateFormProps {
   onSubmit?: (payload: { name: string; query: JobQuery }) => Promise<void> | void;
 }
 
-const SUGGESTED_BUSINESS_TYPES = [
-  "brow bar",
-  "lash studio",
-  "beauty salon",
-  "waxing studio",
-  "threading studio",
-  "day spa",
-  "nail salon",
+const BEAUTY_BUSINESS_TYPES: { category: string; types: string[] }[] = [
+  {
+    category: "Brows & Lashes",
+    types: ["brow bar", "lash studio", "lash extensions", "brow lamination", "microblading studio", "brow threading"],
+  },
+  {
+    category: "Hair",
+    types: ["hair salon", "hair cutting", "barber shop", "blowout bar", "hair extensions", "keratin treatment", "color salon", "natural hair salon"],
+  },
+  {
+    category: "Nails",
+    types: ["nail salon", "nail bar", "gel nails", "acrylic nails", "nail art studio"],
+  },
+  {
+    category: "Skin Care",
+    types: ["skin care studio", "facial spa", "medical spa", "acne clinic", "dermaplaning", "microneedling", "chemical peel", "esthetician"],
+  },
+  {
+    category: "Body & Waxing",
+    types: ["waxing studio", "sugaring studio", "body waxing", "brazilian wax", "threading studio"],
+  },
+  {
+    category: "Wellness & Spa",
+    types: ["day spa", "massage spa", "wellness center", "holistic spa", "float spa", "lymphatic drainage"],
+  },
+  {
+    category: "Makeup",
+    types: ["makeup studio", "makeup artist", "bridal makeup", "permanent makeup", "airbrush studio"],
+  },
+  {
+    category: "Tanning & Body",
+    types: ["spray tan studio", "tanning salon", "body contouring", "cryotherapy", "infrared sauna"],
+  },
 ];
+
 
 export function JobCreateForm({ onSubmit }: JobCreateFormProps) {
   const router = useRouter();
@@ -174,22 +200,33 @@ export function JobCreateForm({ onSubmit }: JobCreateFormProps) {
             <Plus className="h-4 w-4" />
           </Button>
         </div>
-        <div className="flex flex-wrap gap-1.5 mt-1">
-          {SUGGESTED_BUSINESS_TYPES.filter((s) => !businessTypes.includes(s)).map(
-            (s) => (
-              <button
-                key={s}
-                type="button"
-                onClick={(e) => {
-                  e.preventDefault();
-                  setBusinessTypes((prev) => [...prev, s]);
-                }}
-                className="text-xs text-muted-foreground hover:text-primary border border-border rounded px-2 py-0.5 hover:border-primary transition-colors"
-              >
-                + {s}
-              </button>
-            )
-          )}
+        <div className="space-y-2 mt-1 max-h-48 overflow-y-auto pr-1">
+          {BEAUTY_BUSINESS_TYPES.map((group) => {
+            const available = group.types.filter((s) => !businessTypes.includes(s));
+            if (available.length === 0) return null;
+            return (
+              <div key={group.category}>
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">
+                  {group.category}
+                </p>
+                <div className="flex flex-wrap gap-1">
+                  {available.map((s) => (
+                    <button
+                      key={s}
+                      type="button"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        setBusinessTypes((prev) => [...prev, s]);
+                      }}
+                      className="text-xs text-muted-foreground hover:text-primary border border-border rounded px-2 py-0.5 hover:border-primary transition-colors bg-muted/30"
+                    >
+                      + {s}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
         </div>
       </div>
 
