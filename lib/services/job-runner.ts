@@ -10,7 +10,6 @@
 
 import type { Job, Lead, ActivityEvent } from "@/lib/types";
 import { jobsStore, leadsStore } from "@/lib/mock-data";
-import { readLeads, writeLeads } from "@/lib/persistent-store";
 import { searchGooglePlaces, scrapeWebsite, extractLeadDataFromHtml } from "@/lib/integrations";
 
 // In-memory progress tracking
@@ -275,10 +274,8 @@ export async function runJob(jobId: string): Promise<void> {
       detail: `${icpMatches} ICP matches out of ${leads.length} leads.`,
     });
 
-    // Save leads to persistent storage
-    const leadsMap = await readLeads();
-    leadsMap.set(jobId, leads);
-    await writeLeads(leadsMap);
+    // Save leads to in-memory store
+    leadsStore.set(jobId, leads);
 
     // Update job counters
     job.counters = {

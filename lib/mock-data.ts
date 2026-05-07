@@ -146,7 +146,7 @@ function pick<T>(arr: T[]): T {
   return arr[randInt(0, arr.length - 1)];
 }
 
-function generateLeadsForJob(jobId: string, count: number): Lead[] {
+export function generateLeadsForJob(jobId: string, count: number): Lead[] {
   const leads: Lead[] = [];
   const usedNames = new Set<string>();
 

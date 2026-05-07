@@ -2,48 +2,48 @@
  * Jobs Service
  * 
  * Handles job creation, retrieval, and status management.
- * Uses persistent file-based storage for serverless environments.
+ * Uses in-memory storage with pre-seeded demo data.
  */
 
-import type { Job, JobQuery, JobStatus, ActivityEvent, Settings } from "@/lib/types";
-import { jobsStore, leadsStore, exportsStore, createJobInStore, getActivityForJob } from "@/lib/mock-data";
-import { readJobs, writeJobs, readLeads, writeLeads, readExports, writeExports } from "@/lib/persistent-store";
+import type { Job, JobQuery, JobStatus, ActivityEvent } from "@/lib/types";
+import { jobsStore, leadsStore, exportsStore, createJobInStore, getActivityForJob, generateLeadsForJob } from "@/lib/mock-data";
 
-/**
- * Create a new job with the given name and query parameters.
- */
 export class JobsService {
+  /**
+   * Create a new job with the given name and query parameters.
+   * In mock mode, jobs complete instantly with generated leads.
+   */
   static async createJob(input: {
     name: string;
     query: JobQuery;
   }): Promise<Job> {
-    return createJobInStore(input);
+    const job = createJobInStore(input);
+    
+    // In mock mode, immediately generate leads and mark complete
+    const leadCount = Math.floor(Math.random() * 30) + 20; // 20-50 leads
+    const leads = generateLeadsForJob(job.id, leadCount);
+    leadsStore.set(job.id, leads);
+    
+    // Update job to completed status
+    job.status = "completed";
+    job.lastRunAt = new Date().toISOString();
+    job.counters = {
+      placesDiscovered: leadCount,
+      websitesScraped: Math.floor(leadCount * 0.9),
+      leadsEnriched: leadCount,
+      leadsTotal: leadCount,
+    };
+    jobsStore.set(job.id, job);
+    
+    return job;
   }
 
-/**
- * Create a new job with the given name and query parameters.
- */
-static async createJob(input: {
-  name: string;
-  query: JobQuery;
-}): Promise<Job> {
-  const job = createJobInStore(input);
-  
-  // Persist to file storage
-  const jobs = await readJobs();
-  jobs.set(job.id, job);
-  await writeJobs(jobs);
-  
-  return job;
-}
-
-/**
- * Retrieve a job by ID.
- */
-static async getJob(jobId: string): Promise<Job | null> {
-  const jobs = await readJobs();
-  return jobs.get(jobId) || null;
-}
+  /**
+   * Retrieve a job by ID.
+   */
+  static async getJob(jobId: string): Promise<Job | null> {
+    return jobsStore.get(jobId) || null;
+  }
 
   /**
    * List all jobs with optional filtering and pagination.
@@ -53,7 +53,7 @@ static async getJob(jobId: string): Promise<Job | null> {
     limit?: number;
     offset?: number;
   }): Promise<{ jobs: Job[]; total: number }> {
-    let jobs = Array.from((await readJobs()).values());
+    let jobs = Array.from(jobsStore.values());
 
     // Filter by status if provided
     if (options?.status) {
@@ -80,19 +80,29 @@ static async getJob(jobId: string): Promise<Job | null> {
   }
 
   /**
+   * Update a job.
+   */
+  static async updateJob(jobId: string, updates: Partial<Job>): Promise<Job | null> {
+    const job = jobsStore.get(jobId);
+    if (!job) return null;
+    
+    const updated = { ...job, ...updates };
+    jobsStore.set(jobId, updated);
+    return updated;
+  }
+
+  /**
    * Update a job's status.
    */
   static async updateJobStatus(
     jobId: string,
     status: JobStatus
   ): Promise<Job | null> {
-    const jobs = await readJobs();
-    const job = jobs.get(jobId);
+    const job = jobsStore.get(jobId);
     if (!job) return null;
 
     job.status = status;
-    jobs.set(jobId, job);
-    await writeJobs(jobs);
+    jobsStore.set(jobId, job);
     return job;
   }
 
@@ -107,18 +117,9 @@ static async getJob(jobId: string): Promise<Job | null> {
    * Delete a job and its associated leads.
    */
   static async deleteJob(jobId: string): Promise<boolean> {
-    const jobs = await readJobs();
-    const leads = await readLeads();
-    const exports_data = await readExports();
-    
-    jobs.delete(jobId);
-    leads.delete(jobId);
-    exports_data.delete(jobId);
-    
-    await writeJobs(jobs);
-    await writeLeads(leads);
-    await writeExports(exports_data);
-    
+    jobsStore.delete(jobId);
+    leadsStore.delete(jobId);
+    exportsStore.delete(jobId);
     return true;
   }
 }

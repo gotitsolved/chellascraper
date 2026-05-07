@@ -83,7 +83,7 @@ export function JobCreateForm({ onSubmit }: JobCreateFormProps) {
       if (onSubmit) {
         await onSubmit(payload);
       } else {
-        // Create the job
+        // Create the job (completes instantly in mock mode)
         const res = await fetch("/api/jobs", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -91,9 +91,6 @@ export function JobCreateForm({ onSubmit }: JobCreateFormProps) {
         });
         if (!res.ok) throw new Error("Failed to create job.");
         const job = await res.json();
-
-        // Immediately start running the job
-        await fetch(`/api/jobs/${job.id}/run`, { method: "POST" });
 
         router.push(`/jobs/${job.id}`);
         router.refresh();

@@ -37,8 +37,8 @@ export function JobOverviewClient({ initialJob }: JobOverviewClientProps) {
             }
           }
         }
-      } catch (error) {
-        console.error("[v0] Error polling job:", error);
+      } catch {
+        // Ignore polling errors
       }
     };
 
@@ -55,8 +55,8 @@ export function JobOverviewClient({ initialJob }: JobOverviewClientProps) {
         setIsRunning(true);
         setJob({ ...job, status: "running" });
       }
-    } catch (error) {
-      console.error("[v0] Error starting job:", error);
+    } catch {
+      // Ignore start errors
     } finally {
       setStartingJob(false);
     }
