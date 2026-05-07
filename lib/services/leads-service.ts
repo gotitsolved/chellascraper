@@ -1,43 +1,47 @@
 import { db as prisma } from '@/lib/db';
+import { InMemoryStorage } from '@/lib/storage';
 import type { Lead, LeadListFilters, ExportRun, ExportRequestPayload } from '@/lib/types';
 
 export const LeadsService = {
   async addLeads(jobId: string, leads: Lead[]): Promise<void> {
     if (leads.length === 0) return;
-    if (!prisma) {
-      console.log('[v0] Database not initialized - leads not persisted');
-      return;
+
+    if (prisma) {
+      try {
+        await prisma.lead.createMany({
+          data: leads.map(lead => ({
+            id: `lead-${Date.now()}-${Math.random()}`,
+            jobId,
+            placeId: lead.placeId,
+            businessName: lead.businessName,
+            contactName: lead.contactName,
+            category: lead.category,
+            address: lead.address,
+            city: lead.city,
+            state: lead.state,
+            country: lead.country || 'USA',
+            phone: lead.phone,
+            email: lead.email,
+            emailVerified: lead.emailVerified || false,
+            website: lead.website,
+            rating: lead.rating,
+            reviewCount: lead.reviewCount || 0,
+            score: lead.score || 0,
+            icpMatch: lead.icpMatch || false,
+            source: lead.source || 'google_places',
+          })),
+          skipDuplicates: true,
+        });
+        console.log(`[v0] Added ${leads.length} leads for job ${jobId} to database`);
+        return;
+      } catch (error) {
+        console.warn('[v0] Database error adding leads, using in-memory:', error);
+      }
     }
 
-    try {
-      await prisma.lead.createMany({
-        data: leads.map(lead => ({
-          id: `lead-${Date.now()}-${Math.random()}`,
-          jobId,
-          placeId: lead.placeId,
-          businessName: lead.businessName,
-          contactName: lead.contactName,
-          category: lead.category,
-          address: lead.address,
-          city: lead.city,
-          state: lead.state,
-          country: lead.country || 'USA',
-          phone: lead.phone,
-          email: lead.email,
-          emailVerified: lead.emailVerified || false,
-          website: lead.website,
-          rating: lead.rating,
-          reviewCount: lead.reviewCount || 0,
-          score: lead.score || 0,
-          icpMatch: lead.icpMatch || false,
-          source: lead.source || 'google_places',
-        })),
-        skipDuplicates: true,
-      });
-      console.log(`[v0] Added ${leads.length} leads for job ${jobId}`);
-    } catch (error) {
-      console.error('[v0] Error adding leads:', error);
-    }
+    // Fallback to in-memory storage
+    console.log(`[v0] Added ${leads.length} leads for job ${jobId} to memory`);
+    InMemoryStorage.leads.add(jobId, leads);
   },
 
   async listLeads(
@@ -54,40 +58,55 @@ export const LeadsService = {
     const pageSize = filters?.pageSize || 50;
     const skip = (page - 1) * pageSize;
 
-    if (!prisma) {
-      console.log('[v0] Database not initialized - returning empty leads');
-      return { leads: [], total: 0, filtered: 0, page, pageSize };
+    if (prisma) {
+      try {
+        const where: any = { jobId };
+        if (filters?.minScore) where.score = { gte: filters.minScore };
+        if (filters?.minRating) where.rating = { gte: filters.minRating };
+        if (filters?.hasEmail) where.email = { not: null };
+        if (filters?.hasWebsite) where.website = { not: null };
+        if (filters?.icpMatch) where.icpMatch = true;
+
+        const [leads, total] = await Promise.all([
+          prisma.lead.findMany({
+            where,
+            orderBy: { score: 'desc' },
+            take: pageSize,
+            skip,
+          }),
+          prisma.lead.count({ where }),
+        ]);
+
+        return {
+          leads: leads.map(this.mapLeadRow),
+          total: await prisma.lead.count({ where: { jobId } }),
+          filtered: total,
+          page,
+          pageSize,
+        };
+      } catch (error) {
+        console.warn('[v0] Database error listing leads, using in-memory:', error);
+      }
     }
 
-    try {
-      const where: any = { jobId };
-      if (filters?.minScore) where.score = { gte: filters.minScore };
-      if (filters?.minRating) where.rating = { gte: filters.minRating };
-      if (filters?.hasEmail) where.email = { not: null };
-      if (filters?.hasWebsite) where.website = { not: null };
-      if (filters?.icpMatch) where.icpMatch = true;
+    // Fallback to in-memory storage
+    let leads = InMemoryStorage.leads.list(jobId);
 
-      const [leads, total] = await Promise.all([
-        prisma.lead.findMany({
-          where,
-          orderBy: { score: 'desc' },
-          take: pageSize,
-          skip,
-        }),
-        prisma.lead.count({ where }),
-      ]);
+    if (filters?.minScore) leads = leads.filter(l => (l.score || 0) >= filters.minScore);
+    if (filters?.minRating) leads = leads.filter(l => (l.rating || 0) >= filters.minRating);
+    if (filters?.hasEmail) leads = leads.filter(l => !!l.email);
+    if (filters?.hasWebsite) leads = leads.filter(l => !!l.website);
+    if (filters?.icpMatch) leads = leads.filter(l => l.icpMatch);
 
-      return {
-        leads: leads.map(l => this.mapLeadRow(l)),
-        total: await prisma.lead.count({ where: { jobId } }),
-        filtered: total,
-        page,
-        pageSize,
-      };
-    } catch (error) {
-      console.error('[v0] Error listing leads:', error);
-      return { leads: [], total: 0, filtered: 0, page, pageSize };
-    }
+    leads.sort((a, b) => (b.score || 0) - (a.score || 0));
+
+    return {
+      leads: leads.slice(skip, skip + pageSize),
+      total: leads.length,
+      filtered: leads.length,
+      page,
+      pageSize,
+    };
   },
 
   async createExport(
@@ -104,38 +123,49 @@ export const LeadsService = {
 
     const filterSummary = filterParts.length > 0 ? filterParts.join(', ') : 'No filters';
 
-    if (!prisma) {
-      throw new Error('Database not initialized');
-    }
+    const { filtered } = await this.listLeads(jobId, {
+      minScore: payload.minScore,
+      minRating: payload.minRating,
+      hasEmail: payload.mustHaveEmail,
+      hasWebsite: payload.mustHaveWebsite,
+    });
 
-    try {
-      const { filtered } = await this.listLeads(jobId, {
-        minScore: payload.minScore,
-        minRating: payload.minRating,
-        hasEmail: payload.mustHaveEmail,
-        hasWebsite: payload.mustHaveWebsite,
-      });
+    const downloadUrl = `/api/jobs/${jobId}/export?${new URLSearchParams(
+      Object.entries(payload)
+        .filter(([, v]) => v !== undefined)
+        .map(([k, v]) => [k, String(v)])
+    ).toString()}`;
 
-      const exportRun: ExportRun = {
-        id: exportId,
+    const exportRun: ExportRun = {
+      id: exportId,
+      jobId,
+      createdAt: new Date().toISOString(),
+      format: 'csv',
+      filterSummary,
+      rowCount: filtered,
+      status: 'ready',
+      downloadUrl,
+    };
+
+    return exportRun;
+  },
+
+  async listExports(jobId: string): Promise<ExportRun[]> {
+    // For now, return a single recent export based on the current state
+    // In a real system, you would query the database for all exports for this job
+    const { filtered } = await this.listLeads(jobId);
+    return [
+      {
+        id: `export-recent-${jobId}`,
         jobId,
         createdAt: new Date().toISOString(),
         format: 'csv',
-        filterSummary,
+        filterSummary: 'No filters',
         rowCount: filtered,
         status: 'ready',
-        downloadUrl: `/api/jobs/${jobId}/export?${new URLSearchParams(
-          Object.entries(payload)
-            .filter(([, v]) => v !== undefined)
-            .map(([k, v]) => [k, String(v)])
-        ).toString()}`,
-      };
-
-      return exportRun;
-    } catch (error) {
-      console.error('[v0] Error creating export:', error);
-      throw error;
-    }
+        downloadUrl: `/api/jobs/${jobId}/export`,
+      },
+    ];
   },
 
   async getExportLeads(
@@ -170,12 +200,7 @@ export const LeadsService = {
       lead.score?.toString() || '0',
     ]);
 
-    const csvContent = [
-      headers.join(','),
-      ...rows.map(row => row.join(',')),
-    ].join('\n');
-
-    return csvContent;
+    return [headers.join(','), ...rows.map(row => row.join(','))].join('\n');
   },
 
   escapeCsvField(field: string): string {
@@ -206,7 +231,7 @@ export const LeadsService = {
       score: row.score || 0,
       icpMatch: row.icpMatch,
       source: row.source || 'google_places',
-      createdAt: row.createdAt?.toISOString?.() || new Date().toISOString(),
+      createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : row.createdAt,
     };
   },
 };
