@@ -1,7 +1,7 @@
 import { z } from "zod";
-import type { EmailVerificationResult, Lead } from "@/lib/types";
+import type { EmailVerificationResult } from "@/lib/types";
 import { mockEmailVerifier } from "@/lib/adapters/mock-email-verifier";
-import { leadsStore } from "@/lib/mock-data";
+import { LeadsService } from "@/lib/services/leads-service";
 
 // Input validation
 const EmailSchema = z.string().email("Invalid email format").toLowerCase();
@@ -11,22 +11,15 @@ const VerifyEmailPayloadSchema = z.object({
   jobId: z.string().optional(),
 });
 
-const VerifyEmailsPayloadSchema = z.object({
-  emails: z.array(EmailSchema),
-  leadIds: z.array(z.string()).optional(),
-  jobId: z.string().optional(),
-});
-
 type VerifyEmailPayload = z.infer<typeof VerifyEmailPayloadSchema>;
-type VerifyEmailsPayload = z.infer<typeof VerifyEmailsPayloadSchema>;
 
 /**
  * Email Verification Service
- * Handles validation, verification logic, and persistence.
+ * Handles validation, verification logic, and persistence to Neon database.
  */
 export class EmailVerificationService {
   /**
-   * Verify a single email and optionally update the lead record.
+   * Verify a single email and optionally update the lead record in the database.
    */
   static async verifyEmail(
     payload: VerifyEmailPayload
@@ -35,73 +28,31 @@ export class EmailVerificationService {
     const validated = VerifyEmailPayloadSchema.parse(payload);
 
     // Perform verification using the adapter
-    // TODO: Replace mockEmailVerifier with configurable adapter (settings-driven)
     const result = await mockEmailVerifier.verifyEmail(validated.email);
 
-    // Update lead record if leadId and jobId are provided
-    if (validated.leadId && validated.jobId) {
-      this.updateLeadVerification(validated.jobId, validated.leadId, result);
+    // Update lead record in database if leadId is provided
+    if (validated.leadId) {
+      await LeadsService.updateVerificationStatus(validated.leadId, {
+        verificationStatus: result.status,
+        verificationReason: result.reason,
+        verificationConfidence: result.confidence,
+        isDisposable: result.isDisposable,
+        isRoleBased: result.isRoleBased,
+        hasMxRecords: result.hasMxRecords,
+        smtpCheckAttempted: result.smtpCheckAttempted,
+        smtpCheckResult: result.smtpCheckResult,
+      });
     }
 
     return result;
   }
 
   /**
-   * Verify multiple emails and optionally update lead records.
+   * Verify multiple emails in batch.
    */
-  static async verifyEmails(
-    payload: VerifyEmailsPayload
-  ): Promise<EmailVerificationResult[]> {
-    // Validate input
-    const validated = VerifyEmailsPayloadSchema.parse(payload);
-
-    // Perform batch verification
-    // TODO: Replace mockEmailVerifier with configurable adapter
-    const results = await mockEmailVerifier.verifyEmails(validated.emails);
-
-    // Update lead records if provided
-    if (validated.leadIds && validated.jobId && validated.leadIds.length > 0) {
-      for (let i = 0; i < results.length; i++) {
-        const leadId = validated.leadIds[i];
-        if (leadId) {
-          this.updateLeadVerification(validated.jobId, leadId, results[i]);
-        }
-      }
-    }
-
-    return results;
-  }
-
-  /**
-   * Update a lead's verification status in the store.
-   */
-  private static updateLeadVerification(
-    jobId: string,
-    leadId: string,
-    result: EmailVerificationResult
-  ): void {
-    const leads = leadsStore.get(jobId);
-    if (!leads) return;
-
-    const leadIndex = leads.findIndex((l) => l.id === leadId);
-    if (leadIndex === -1) return;
-
-    const lead = leads[leadIndex];
-    const updatedLead: Lead = {
-      ...lead,
-      verificationStatus: result.status,
-      verificationReason: result.reason,
-      verificationConfidence: result.confidence,
-      verifiedAt: result.verifiedAt,
-      isDisposable: result.isDisposable,
-      isRoleBased: result.isRoleBased,
-      hasMxRecords: result.hasMxRecords,
-      smtpCheckAttempted: result.smtpCheckAttempted,
-      smtpCheckResult: result.smtpCheckResult,
-    };
-
-    leads[leadIndex] = updatedLead;
-    leadsStore.set(jobId, leads);
+  static async verifyEmails(emails: string[]): Promise<EmailVerificationResult[]> {
+    // Perform batch verification using the adapter
+    return await mockEmailVerifier.verifyEmails(emails);
   }
 
   /**

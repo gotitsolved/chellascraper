@@ -176,6 +176,84 @@ export const LeadsService = {
     return field;
   },
 
+  async updateVerificationStatus(
+    leadId: string,
+    verificationData: {
+      verificationStatus: 'valid' | 'invalid' | 'risky' | 'unknown' | 'unverified';
+      verificationReason?: string;
+      verificationConfidence?: number;
+      isDisposable?: boolean;
+      isRoleBased?: boolean;
+      hasMxRecords?: boolean;
+      smtpCheckAttempted?: boolean;
+      smtpCheckResult?: string;
+    }
+  ): Promise<Lead | null> {
+    const now = new Date();
+
+    if (sql) {
+      try {
+        const rows = await sql`
+          UPDATE "Lead" SET
+            "verificationStatus" = ${verificationData.verificationStatus},
+            "verificationReason" = ${verificationData.verificationReason || null},
+            "verificationConfidence" = ${verificationData.verificationConfidence || null},
+            "verifiedAt" = ${now},
+            "isDisposable" = ${verificationData.isDisposable || null},
+            "isRoleBased" = ${verificationData.isRoleBased || null},
+            "hasMxRecords" = ${verificationData.hasMxRecords || null},
+            "smtpCheckAttempted" = ${verificationData.smtpCheckAttempted || null},
+            "smtpCheckResult" = ${verificationData.smtpCheckResult || null},
+            "emailVerified" = ${verificationData.verificationStatus === 'valid'},
+            "updatedAt" = ${now}
+          WHERE id = ${leadId}
+          RETURNING *
+        `;
+        if (rows.length > 0) {
+          console.log(`[v0] Updated verification status for lead ${leadId} to ${verificationData.verificationStatus}`);
+          return this.mapLeadRow(rows[0]);
+        }
+        return null;
+      } catch (error) {
+        console.error('[v0] Database error updating verification:', error);
+        return null;
+      }
+    }
+    return null;
+  },
+
+  async getLeadById(leadId: string): Promise<Lead | null> {
+    if (sql) {
+      try {
+        const rows = await sql`SELECT * FROM "Lead" WHERE id = ${leadId}`;
+        if (rows.length > 0) {
+          return this.mapLeadRow(rows[0]);
+        }
+      } catch (error) {
+        console.error('[v0] Database error getting lead:', error);
+      }
+    }
+    return null;
+  },
+
+  async getLeadsWithEmails(jobId: string): Promise<Lead[]> {
+    if (sql) {
+      try {
+        const rows = await sql`
+          SELECT * FROM "Lead" 
+          WHERE "jobId" = ${jobId} 
+          AND email IS NOT NULL 
+          AND email != ''
+          ORDER BY score DESC
+        `;
+        return (rows as any[]).map(this.mapLeadRow);
+      } catch (error) {
+        console.error('[v0] Database error getting leads with emails:', error);
+      }
+    }
+    return InMemoryStorage.leads.list(jobId).filter(l => !!l.email);
+  },
+
   mapLeadRow(row: any): Lead {
     return {
       id: row.id,
@@ -198,6 +276,13 @@ export const LeadsService = {
       icpMatch: row.icpMatch,
       source: row.source || 'google_places',
       createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : row.createdAt,
+      verificationStatus: row.verificationStatus || 'unverified',
+      verificationReason: row.verificationReason,
+      verificationConfidence: row.verificationConfidence,
+      verifiedAt: row.verifiedAt instanceof Date ? row.verifiedAt.toISOString() : row.verifiedAt,
+      isDisposable: row.isDisposable,
+      isRoleBased: row.isRoleBased,
+      hasMxRecords: row.hasMxRecords,
     };
   },
 };
