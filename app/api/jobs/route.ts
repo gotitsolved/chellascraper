@@ -1,10 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
-import { listJobs, createJob } from "@/lib/api";
+import { JobsService } from "@/lib/services/jobs-service";
 import type { JobQuery } from "@/lib/types";
 
 export async function GET() {
-  const jobs = await listJobs();
-  return NextResponse.json(jobs);
+  try {
+    const jobs = await JobsService.listJobs();
+    return NextResponse.json(jobs);
+  } catch (error) {
+    console.error("[v0] Error listing jobs:", error);
+    return NextResponse.json({ error: "Failed to list jobs" }, { status: 500 });
+  }
 }
 
 export async function POST(req: NextRequest) {
@@ -19,9 +24,10 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const job = await createJob({ name, query });
+    const job = await JobsService.createJob({ name, query });
     return NextResponse.json(job, { status: 201 });
-  } catch {
+  } catch (error) {
+    console.error("[v0] Error creating job:", error);
     return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
   }
 }

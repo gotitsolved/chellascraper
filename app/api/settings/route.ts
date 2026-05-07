@@ -1,17 +1,29 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSettings, updateSettings } from "@/lib/api";
+import { settingsStore } from "@/lib/services/jobs-service";
+import type { AppSettings } from "@/lib/types";
 
 export async function GET() {
-  const settings = await getSettings();
-  return NextResponse.json(settings);
+  try {
+    return NextResponse.json(settingsStore);
+  } catch (error) {
+    console.error("[v0] Error fetching settings:", error);
+    return NextResponse.json(
+      { error: "Failed to fetch settings" },
+      { status: 500 }
+    );
+  }
 }
 
 export async function PATCH(req: NextRequest) {
   try {
-    const partial = await req.json();
-    const updated = await updateSettings(partial);
-    return NextResponse.json(updated);
-  } catch {
+    const partial = (await req.json()) as Partial<AppSettings>;
+
+    // Update settings store
+    Object.assign(settingsStore, partial);
+
+    return NextResponse.json(settingsStore);
+  } catch (error) {
+    console.error("[v0] Error updating settings:", error);
     return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
   }
 }
