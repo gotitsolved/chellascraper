@@ -39,9 +39,13 @@ export function JobCreateForm({ onSubmit }: JobCreateFormProps) {
   const [error, setError] = useState<string | null>(null);
 
   function addType(type: string) {
+    console.log("[v0] addType called with:", type, "current types:", businessTypes);
     const trimmed = type.trim().toLowerCase();
     if (trimmed && !businessTypes.includes(trimmed)) {
+      console.log("[v0] Adding new type:", trimmed);
       setBusinessTypes((prev) => [...prev, trimmed]);
+    } else {
+      console.log("[v0] Type not added - empty or duplicate");
     }
     setTypeInput("");
   }
