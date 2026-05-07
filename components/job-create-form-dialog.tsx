@@ -29,8 +29,7 @@ export function JobCreateFormDialog() {
         </DialogHeader>
         <JobCreateForm onSubmit={async () => {
           setOpen(false);
-          // Trigger page refresh
-          window.location.reload();
+          // Form handles navigation and refresh
         }} />
       </DialogContent>
     </Dialog>
