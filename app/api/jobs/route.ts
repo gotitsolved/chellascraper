@@ -19,21 +19,30 @@ export async function POST(req: NextRequest) {
     const { name, query } = body as { name: string; query: JobQuery };
 
     if (!name || !query) {
+      console.error("[v0] Missing required fields:", { name: !!name, query: !!query });
       return NextResponse.json(
         { error: "name and query are required" },
         { status: 400 }
       );
     }
 
+    console.log("[v0] Creating job:", { name, query });
     const job = await JobsService.createJob({ name, query });
+    console.log("[v0] Job created:", job);
 
     // Run job in background (non-blocking)
-    runJob(job.id).catch(err => console.error("[v0] Background job error:", err));
+    runJob(job.id).catch(err => {
+      console.error("[v0] Background job error:", err);
+    });
 
     return NextResponse.json(job, { status: 201 });
   } catch (error) {
     console.error("[v0] Error creating job:", error);
-    return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    return NextResponse.json(
+      { error: "Failed to create job", details: errorMessage },
+      { status: 500 }
+    );
   }
 }
 

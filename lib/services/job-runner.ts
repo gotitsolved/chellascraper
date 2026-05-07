@@ -25,10 +25,20 @@ export async function runJob(jobId: string): Promise<void> {
     }
 
     console.log(`[v0] Starting job pipeline for ${jobId}`);
+    await JobsService.updateJobStatus(jobId, 'running');
 
     // Stage 1: Discovery - Search Google Places
-    await JobsService.updateJobStatus(jobId, 'running');
     console.log(`[v0] Stage 1: Discovering places in ${job.query.locationText}`);
+    const apiKey = process.env.GOOGLE_PLACES_API_KEY;
+    if (!apiKey) {
+      console.warn('[v0] ⚠️ GOOGLE_PLACES_API_KEY not set - job will have 0 results');
+      await JobsService.updateJobCounters(jobId, {
+        places_discovered: 0,
+        leads_total: 0,
+      });
+      await JobsService.updateJobStatus(jobId, 'completed');
+      return;
+    }
 
     const places = await searchGooglePlaces({
       location: job.query.locationText || 'Los Angeles, CA',
@@ -43,6 +53,7 @@ export async function runJob(jobId: string): Promise<void> {
     });
 
     if (places.length === 0) {
+      console.warn('[v0] No places found for this search');
       await JobsService.updateJobStatus(jobId, 'completed');
       return;
     }

@@ -157,6 +157,12 @@ export function JobCreateForm({ onSubmit }: JobCreateFormProps) {
           "Run Search"
         )}
       </Button>
+
+      {location && !error && (
+        <p className="text-xs text-muted-foreground text-center">
+          💡 Note: Requires GOOGLE_PLACES_API_KEY to search real data
+        </p>
+      )}
     </form>
   );
 }
