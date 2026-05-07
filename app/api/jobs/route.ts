@@ -28,19 +28,26 @@ export async function POST(req: NextRequest) {
 
     console.log("[v0] Creating job:", { name, query });
     const job = await JobsService.createJob({ name, query });
-    console.log("[v0] Job created:", job);
+    console.log("[v0] Job created successfully:", { jobId: job.id, status: job.status });
 
-    // Run job in background (non-blocking)
-    runJob(job.id).catch(err => {
-      console.error("[v0] Background job error:", err);
+    // Run job in background (non-blocking) - use setImmediate to avoid blocking
+    setImmediate(() => {
+      runJob(job.id).catch(err => {
+        console.error("[v0] Background job execution error:", err);
+      });
     });
 
     return NextResponse.json(job, { status: 201 });
   } catch (error) {
-    console.error("[v0] Error creating job:", error);
     const errorMessage = error instanceof Error ? error.message : String(error);
+    console.error("[v0] Full error creating job:", { error, message: errorMessage });
+    
     return NextResponse.json(
-      { error: "Failed to create job", details: errorMessage },
+      { 
+        error: "Failed to create job", 
+        details: errorMessage,
+        timestamp: new Date().toISOString()
+      },
       { status: 500 }
     );
   }
