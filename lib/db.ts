@@ -1,3 +1,4 @@
+// Database connection singleton - Last updated: 2026-05-07
 import { PrismaClient } from "@prisma/client";
 
 const globalForPrisma = globalThis as unknown as { prisma: PrismaClient | null };
