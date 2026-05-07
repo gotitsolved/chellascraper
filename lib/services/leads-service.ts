@@ -135,33 +135,43 @@ export class LeadsService {
   }
 
   /**
-   * Generate CSV from leads.
+   * Generate CSV from leads with Contact Name and Business Name as first columns.
    */
   static generateCsv(leads: Lead[]): string {
     const headers = [
-      "Name",
+      "Contact Name",
+      "Business Name",
       "Category",
       "Address",
       "City",
+      "State",
       "Country",
       "Phone",
       "Email",
       "Website",
+      "Instagram",
+      "Facebook",
       "Rating",
+      "Review Count",
       "Lead Score",
       "ICP Match",
     ];
 
     const rows = leads.map((lead) => [
+      lead.contactName || "",
       lead.name,
       lead.category,
       lead.address || "",
       lead.city || "",
+      lead.region || "",
       lead.country || "",
       lead.phone || "",
       lead.email || "",
       lead.websiteUrl || "",
+      lead.instagram || "",
+      lead.facebook || "",
       lead.rating?.toFixed(1) || "",
+      lead.reviewCount?.toString() || "",
       lead.leadScore.toFixed(0),
       lead.icpMatch ? "Yes" : "No",
     ]);

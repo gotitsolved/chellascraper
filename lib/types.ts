@@ -39,6 +39,7 @@ export interface Lead {
   jobId: string;
   placeId?: string;
   name: string;
+  contactName?: string;
   category: string;
   rating?: number | null;
   reviewCount?: number | null;

@@ -58,16 +58,17 @@ export function ExportOptionsPanel({
       };
       await onExport(payload);
 
-      // Also trigger a direct browser download
+      // Trigger a direct browser download
       const qs = new URLSearchParams(
         Object.entries(payload)
           .filter(([, v]) => v !== undefined)
           .map(([k, v]) => [k, String(v)])
       ).toString();
       const url = `/api/jobs/${job.id}/export${qs ? `?${qs}` : ""}`;
+      const timestamp = new Date().toISOString().slice(0, 10);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `chella-leads-${job.id}.csv`;
+      a.download = `chella-leads-${job.id}-${timestamp}.csv`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -87,8 +88,7 @@ export function ExportOptionsPanel({
             Export to CSV
           </h3>
           <p className="text-xs text-muted-foreground leading-relaxed">
-            Configure filters below to refine which leads are included in the
-            export.
+            Exports include: <span className="text-foreground font-medium">Contact Name, Business Name</span>, category, address, city, state, country, phone, email, website, Instagram, Facebook, rating, review count, lead score, and ICP match.
           </p>
         </div>
 

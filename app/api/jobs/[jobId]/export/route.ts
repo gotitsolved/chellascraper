@@ -49,11 +49,14 @@ export async function GET(
 
   const csv = LeadsService.generateCsv(leads);
 
+  const timestamp = new Date().toISOString().slice(0, 10);
+  const filename = `chella-leads-${jobId}-${timestamp}.csv`;
+
   return new NextResponse(csv, {
     status: 200,
     headers: {
       "Content-Type": "text/csv; charset=utf-8",
-      "Content-Disposition": `attachment; filename="chella-leads-${jobId}.csv"`,
+      "Content-Disposition": `attachment; filename="${filename}"`,
     },
   });
 }

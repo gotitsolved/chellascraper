@@ -105,6 +105,29 @@ const SERVICES = [
   ["Full Brow Services", "Lamination", "Henna"],
 ];
 
+const CONTACT_NAMES = [
+  "Jessica Rivera",
+  "Aisha Thompson",
+  "Maria Gonzalez",
+  "Priya Patel",
+  "Sarah Kim",
+  "Natalie Chen",
+  "Olivia Martinez",
+  "Jasmine Williams",
+  "Chloe Anderson",
+  "Diana Flores",
+  "Tara Singh",
+  "Bianca Torres",
+  "Elena Novak",
+  "Layla Hassan",
+  "Megan Park",
+  "Isabelle Dubois",
+  "Rachel Okonkwo",
+  "Vanessa Cruz",
+  "Simone Adeyemi",
+  "Yuki Tanaka",
+];
+
 const ABOUT_EXCERPTS = [
   "We are a boutique brow studio dedicated to enhancing your natural beauty using the latest techniques.",
   "Our expert team of beauty professionals specializes in precision brow artistry and lash transformations.",
@@ -160,11 +183,14 @@ function generateLeadsForJob(jobId: string, count: number): Lead[] {
     score += hasTiktok || hasInsta ? 10 : 0;
     score = Math.min(score, 100);
 
+    const hasContactName = Math.random() > 0.3;
+
     leads.push({
       id: `lead-${jobId}-${i}`,
       jobId,
       placeId: `ChIJ${Math.random().toString(36).slice(2, 12).toUpperCase()}`,
       name,
+      contactName: hasContactName ? pick(CONTACT_NAMES) : undefined,
       category,
       rating,
       reviewCount,
