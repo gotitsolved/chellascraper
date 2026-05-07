@@ -1,54 +1,97 @@
 /**
  * Email Extraction Service
  * 
- * Uses Claude AI to extract contact information and emails from business websites.
- * Integrated with Kernel Agents for structured extraction.
+ * EMAIL-FIRST EXTRACTION: Prioritizes finding business email addresses above all else.
+ * Extracts contact information and emails from business websites.
  */
 
 interface ExtractionResult {
   emails: string[];
+  primaryEmail?: string;
+  emailCount: number;
+  hasEmail: boolean;
   contactName?: string;
   phone?: string;
   contactPage?: string;
   confidence: number;
 }
 
+// Business email prefixes to prioritize
+const BUSINESS_EMAIL_PREFIXES = [
+  'info',
+  'hello',
+  'contact',
+  'support',
+  'sales',
+  'orders',
+  'wholesale',
+  'inquiries',
+  'booking',
+  'appointments',
+  'reservations',
+  'partnership',
+  'stockist',
+];
+
+const DISPOSABLE_DOMAINS = [
+  'gmail.com', 'yahoo.com', 'hotmail.com', 'outlook.com',
+  'tempmail.com', 'guerrillamail.com', '10minutemail.com',
+  'throwaway.email', 'test.com', 'example.com', 'aol.com'
+];
+
 export async function extractEmailsFromHtml(
   businessName: string,
   website: string,
   html: string
 ): Promise<ExtractionResult> {
-  // First try simple regex extraction
+  // Step 1: Find ALL emails using regex
   const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
-  const simpleEmails = html.match(emailRegex) || [];
+  const allEmails = html.match(emailRegex) || [];
   
-  // Filter for legitimate business emails (exclude common disposables)
-  const filteredEmails = simpleEmails.filter(email => {
+  // Step 2: Filter out disposable/personal emails
+  const businessEmails = allEmails.filter(email => {
     const domain = email.split('@')[1].toLowerCase();
-    const disposableDomains = ['gmail.com', 'yahoo.com', 'hotmail.com', 'outlook.com', 'test.com'];
-    return !disposableDomains.includes(domain) && !email.includes('noreply');
+    const isNotDisposable = !DISPOSABLE_DOMAINS.includes(domain);
+    const isNotNoreply = !email.toLowerCase().includes('noreply');
+    return isNotDisposable && isNotNoreply;
   });
-
-  // Remove duplicates
-  const uniqueEmails = Array.from(new Set(filteredEmails));
-
+  
+  // Step 3: Remove duplicates
+  const uniqueEmails = Array.from(new Set(businessEmails));
+  
+  // Step 4: Prioritize emails with business prefixes
+  const prioritizedEmails = uniqueEmails.sort((a, b) => {
+    const aPrefix = a.split('@')[0].toLowerCase();
+    const bPrefix = b.split('@')[0].toLowerCase();
+    const aPriority = BUSINESS_EMAIL_PREFIXES.some(p => aPrefix.includes(p)) ? 0 : 1;
+    const bPriority = BUSINESS_EMAIL_PREFIXES.some(p => bPrefix.includes(p)) ? 0 : 1;
+    return aPriority - bPriority;
+  });
+  
+  // Step 5: Select primary email (first business email, or first if none match pattern)
+  const primaryEmail = prioritizedEmails[0];
+  
   // Look for contact/about pages
   const contactPageMatch = html.match(/(?:contact|about|support)(?:\s+us)?/i);
   const contactPage = contactPageMatch ? contactPageMatch[0] : undefined;
-
+  
   // Extract phone numbers
   const phoneRegex = /(?:\+1[-.\s]?)?\(?([0-9]{3})\)?[-.\s]?([0-9]{3})[-.\s]?([0-9]{4})/g;
   const phoneMatches = html.match(phoneRegex);
   const phone = phoneMatches ? phoneMatches[0] : undefined;
-
-  // Calculate confidence score
-  let confidence = 0.5; // Base confidence
-  if (uniqueEmails.length > 0) confidence += 0.3;
-  if (phone) confidence += 0.1;
-  if (contactPage) confidence += 0.1;
-
+  
+  // Calculate confidence score (email presence is primary indicator)
+  let confidence = 0.3; // Base confidence
+  if (primaryEmail) confidence += 0.4; // Email found = +40%
+  if (phone) confidence += 0.1; // Phone = +10%
+  if (contactPage) confidence += 0.1; // Contact page = +10%
+  if (uniqueEmails.length > 1) confidence += 0.1; // Multiple emails = +10%
+  
   return {
-    emails: uniqueEmails.slice(0, 5), // Return top 5 emails
+    emails: prioritizedEmails.slice(0, 5), // Return top 5 emails
+    primaryEmail,
+    emailCount: prioritizedEmails.length,
+    hasEmail: prioritizedEmails.length > 0,
     contactName: businessName,
     phone,
     contactPage,
@@ -57,28 +100,20 @@ export async function extractEmailsFromHtml(
 }
 
 /**
- * Validate an email address with SMTP simulation.
- * In production, this would perform actual SMTP verification.
+ * Validate an email address
  */
 export async function validateEmail(email: string): Promise<boolean> {
   // Basic validation
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   if (!emailRegex.test(email)) return false;
-
-  // Simulate SMTP check - in production, use a real service
-  const disposableDomains = [
-    'tempmail.com',
-    'guerrillamail.com',
-    '10minutemail.com',
-    'throwaway.email',
-  ];
-
+  
+  // Check for disposable domains
   const domain = email.split('@')[1].toLowerCase();
-  return !disposableDomains.includes(domain);
+  return !DISPOSABLE_DOMAINS.includes(domain);
 }
 
 /**
- * Score an email based on various factors.
+ * Score an email based on business relevance
  */
 export async function scoreEmail(
   email: string,
@@ -86,43 +121,48 @@ export async function scoreEmail(
   contactName?: string
 ): Promise<number> {
   let score = 50; // Base score
-
-  // Check if email matches business name or contact name
-  const businessMatch = email.toLowerCase().includes(
-    businessName.toLowerCase().replace(/\s+/g, '').slice(0, 5)
-  );
-  if (businessMatch) score += 20;
-
-  // Check if it's a generic email
-  const genericEmails = ['info', 'contact', 'hello', 'support'];
+  
+  const emailLower = email.toLowerCase();
+  const businessNameLower = businessName.toLowerCase();
+  
+  // High priority: matches business name
+  if (businessNameLower.length > 0) {
+    const businessPrefix = businessNameLower.replace(/\s+/g, '').slice(0, 5);
+    if (emailLower.includes(businessPrefix)) score += 25;
+  }
+  
+  // Priority: business email prefixes
   const emailPrefix = email.split('@')[0].toLowerCase();
-  if (genericEmails.some(g => emailPrefix.includes(g))) score += 15;
-
-  // Check domain quality (non-generic domains score higher)
+  if (BUSINESS_EMAIL_PREFIXES.some(p => emailPrefix.includes(p))) score += 20;
+  
+  // Domain quality (non-generic)
   const domain = email.split('@')[1].toLowerCase();
-  const genericDomains = ['gmail.com', 'yahoo.com', 'outlook.com'];
-  if (!genericDomains.includes(domain)) score += 15;
-
-  // Check for contact name match
-  if (contactName && email.includes(contactName.toLowerCase())) score += 25;
-
+  if (!DISPOSABLE_DOMAINS.includes(domain)) score += 10;
+  
+  // Contact name match
+  if (contactName && emailLower.includes(contactName.toLowerCase())) score += 15;
+  
   return Math.min(100, score);
 }
 
 /**
- * Extract and validate all contact information from business website.
+ * Extract and validate all contact information from business website
+ * PRIMARY FOCUS: Email extraction and qualification
  */
 export async function extractBusinessContacts(
   businessName: string,
   website: string,
   html: string
 ): Promise<{
+  primaryEmail?: string;
   emails: Array<{ email: string; score: number; valid: boolean }>;
+  emailCount: number;
+  hasEmail: boolean;
   contactName?: string;
   phone?: string;
 }> {
   const extraction = await extractEmailsFromHtml(businessName, website, html);
-
+  
   // Validate and score each email
   const validatedEmails = await Promise.all(
     extraction.emails.map(async (email) => ({
@@ -131,13 +171,17 @@ export async function extractBusinessContacts(
       score: await scoreEmail(email, businessName, extraction.contactName),
     }))
   );
-
+  
   // Sort by score descending
   validatedEmails.sort((a, b) => b.score - a.score);
-
+  
   return {
+    primaryEmail: extraction.primaryEmail,
     emails: validatedEmails,
+    emailCount: extraction.emailCount,
+    hasEmail: extraction.hasEmail,
     contactName: extraction.contactName,
     phone: extraction.phone,
   };
 }
+

@@ -54,23 +54,49 @@ export interface Lead {
   googleUrl?: string;
   website?: string;
   websiteUrl?: string;
+  
+  // Email-first fields
   email?: string;
+  primaryEmail?: string;
+  emails?: string[];
+  emailCount?: number;
+  hasEmail?: boolean;
   emailVerified?: boolean;
-  phone?: string;
+  
+  // Social media
   facebook?: string;
   instagram?: string;
   tiktok?: string;
+  linkedin?: string;
+  
+  // Beauty & ICP fields
+  icpMatch?: boolean;
+  icpSegments?: string[];
+  beautyRelevanceScore?: number;
+  sellsBeautyProducts?: boolean;
+  offersBeautyServices?: boolean;
+  healthcareBeautyOverlap?: boolean;
+  beautySignals?: string[];
+  
+  // Contact & enrichment
+  phone?: string;
   contactPageUrl?: string;
+  enrichedDescription?: string;
   aboutExcerpt?: string;
   servicesTags?: string[];
+  icpExplanation?: string;
+  
+  // Scoring & source
   score?: number;
   leadScore?: number;
-  icpMatch?: boolean;
-  icpExplanation?: string;
-  jurisdiction?: string;
   source?: string;
+  jurisdiction?: string;
+  
+  // Metadata
   crawledAt?: string;
   createdAt?: string;
+  updatedAt?: string;
+  
   // Email verification fields
   verificationStatus?: "unverified" | "valid" | "invalid" | "risky" | "unknown";
   verificationReason?: string;
@@ -128,6 +154,13 @@ export interface LeadListFilters {
   hasEmail?: boolean;
   hasWebsite?: boolean;
   icpMatch?: boolean;
+  beautyServicesOnly?: boolean;
+  beautyRetailOnly?: boolean;
+  medSpaAestheticsOnly?: boolean;
+  healthcareBeautyOnly?: boolean;
+  socialsPresent?: boolean;
+  minBeautyScore?: number;
+  icpSegments?: string[];
   city?: string;
   country?: string;
   page?: number;
@@ -140,6 +173,11 @@ export interface ExportRequestPayload {
   mustHaveEmail?: boolean;
   mustHaveWebsite?: boolean;
   icpMatchOnly?: boolean;
+  beautyServicesOnly?: boolean;
+  beautyRetailOnly?: boolean;
+  medSpaAestheticsOnly?: boolean;
+  healthcareBeautyOnly?: boolean;
+  minBeautyScore?: number;
   country?: string;
   city?: string;
 }
