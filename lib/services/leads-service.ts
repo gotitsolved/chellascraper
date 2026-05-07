@@ -1,4 +1,3 @@
-// Leads service - synced
 import { db as prisma } from '@/lib/db';
 import type { Lead, LeadListFilters, ExportRun, ExportRequestPayload } from '@/lib/types';
 
@@ -6,7 +5,7 @@ export const LeadsService = {
   async addLeads(jobId: string, leads: Lead[]): Promise<void> {
     if (leads.length === 0) return;
     if (!prisma) {
-      console.error('[v0] Database not initialized in addLeads');
+      console.log('[v0] Database not initialized - leads not persisted');
       return;
     }
 
@@ -25,16 +24,16 @@ export const LeadsService = {
           country: lead.country || 'USA',
           phone: lead.phone,
           email: lead.email,
-          emailVerified: lead.emailVerified,
+          emailVerified: lead.emailVerified || false,
           website: lead.website,
           rating: lead.rating,
-          reviewCount: lead.reviewCount,
-          score: lead.score,
-          icpMatch: lead.icpMatch,
-          source: lead.source,
+          reviewCount: lead.reviewCount || 0,
+          score: lead.score || 0,
+          icpMatch: lead.icpMatch || false,
+          source: lead.source || 'google_places',
         })),
+        skipDuplicates: true,
       });
-
       console.log(`[v0] Added ${leads.length} leads for job ${jobId}`);
     } catch (error) {
       console.error('[v0] Error adding leads:', error);
@@ -56,44 +55,32 @@ export const LeadsService = {
     const skip = (page - 1) * pageSize;
 
     if (!prisma) {
+      console.log('[v0] Database not initialized - returning empty leads');
       return { leads: [], total: 0, filtered: 0, page, pageSize };
     }
 
     try {
-      // Build where clause
       const where: any = { jobId };
+      if (filters?.minScore) where.score = { gte: filters.minScore };
+      if (filters?.minRating) where.rating = { gte: filters.minRating };
+      if (filters?.hasEmail) where.email = { not: null };
+      if (filters?.hasWebsite) where.website = { not: null };
+      if (filters?.icpMatch) where.icpMatch = true;
 
-      if (filters?.minScore) {
-        where.score = { gte: filters.minScore };
-      }
-      if (filters?.minRating) {
-        where.rating = { gte: filters.minRating };
-      }
-      if (filters?.hasEmail) {
-        where.email = { not: null };
-      }
-      if (filters?.hasWebsite) {
-        where.website = { not: null };
-      }
-      if (filters?.icpMatch) {
-        where.icpMatch = true;
-      }
-
-      const [leads, filtered, total] = await Promise.all([
+      const [leads, total] = await Promise.all([
         prisma.lead.findMany({
           where,
           orderBy: { score: 'desc' },
-          skip,
           take: pageSize,
+          skip,
         }),
         prisma.lead.count({ where }),
-        prisma.lead.count({ where: { jobId } }),
       ]);
 
       return {
         leads: leads.map(l => this.mapLeadRow(l)),
-        total,
-        filtered,
+        total: await prisma.lead.count({ where: { jobId } }),
+        filtered: total,
         page,
         pageSize,
       };
@@ -121,41 +108,30 @@ export const LeadsService = {
       throw new Error('Database not initialized');
     }
 
-    // Count filtered leads
-    const { filtered } = await this.listLeads(jobId, {
-      minScore: payload.minScore,
-      minRating: payload.minRating,
-      hasEmail: payload.mustHaveEmail,
-      hasWebsite: payload.mustHaveWebsite,
-    });
-
     try {
-      const exportRun = await prisma.export.create({
-        data: {
-          id: exportId,
-          jobId,
-          format: 'csv',
-          filterSummary,
-          rowCount: filtered,
-          status: 'ready',
-          downloadUrl: `/api/jobs/${jobId}/export?${new URLSearchParams(
-            Object.entries(payload)
-              .filter(([, v]) => v !== undefined)
-              .map(([k, v]) => [k, String(v)])
-          ).toString()}`,
-        },
+      const { filtered } = await this.listLeads(jobId, {
+        minScore: payload.minScore,
+        minRating: payload.minRating,
+        hasEmail: payload.mustHaveEmail,
+        hasWebsite: payload.mustHaveWebsite,
       });
 
-      return {
-        id: exportRun.id,
-        jobId: exportRun.jobId,
-        createdAt: exportRun.createdAt.toISOString(),
-        format: exportRun.format,
-        filterSummary: exportRun.filterSummary,
-        rowCount: exportRun.rowCount,
-        status: exportRun.status,
-        downloadUrl: exportRun.downloadUrl || undefined,
+      const exportRun: ExportRun = {
+        id: exportId,
+        jobId,
+        createdAt: new Date().toISOString(),
+        format: 'csv',
+        filterSummary,
+        rowCount: filtered,
+        status: 'ready',
+        downloadUrl: `/api/jobs/${jobId}/export?${new URLSearchParams(
+          Object.entries(payload)
+            .filter(([, v]) => v !== undefined)
+            .map(([k, v]) => [k, String(v)])
+        ).toString()}`,
       };
+
+      return exportRun;
     } catch (error) {
       console.error('[v0] Error creating export:', error);
       throw error;
@@ -226,10 +202,10 @@ export const LeadsService = {
       emailVerified: row.emailVerified,
       website: row.website,
       rating: row.rating,
-      reviewCount: row.reviewCount,
-      score: row.score,
+      reviewCount: row.reviewCount || 0,
+      score: row.score || 0,
       icpMatch: row.icpMatch,
-      source: row.source,
+      source: row.source || 'google_places',
       createdAt: row.createdAt?.toISOString?.() || new Date().toISOString(),
     };
   },
