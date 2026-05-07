@@ -39,15 +39,11 @@ export function JobCreateForm({ onSubmit }: JobCreateFormProps) {
   const [error, setError] = useState<string | null>(null);
 
   function addType(type: string) {
-    console.log("[v0] addType called with:", type, "current types:", businessTypes);
     const trimmed = type.trim().toLowerCase();
     if (trimmed && !businessTypes.includes(trimmed)) {
-      console.log("[v0] Adding new type:", trimmed);
       setBusinessTypes((prev) => [...prev, trimmed]);
-    } else {
-      console.log("[v0] Type not added - empty or duplicate");
+      setTypeInput("");
     }
-    setTypeInput("");
   }
 
   function removeType(type: string) {
@@ -169,7 +165,10 @@ export function JobCreateForm({ onSubmit }: JobCreateFormProps) {
             type="button"
             variant="outline"
             size="icon"
-            onClick={() => addType(typeInput)}
+            onClick={(e) => {
+              e.preventDefault();
+              addType(typeInput);
+            }}
             className="border-border shrink-0"
           >
             <Plus className="h-4 w-4" />
@@ -181,7 +180,10 @@ export function JobCreateForm({ onSubmit }: JobCreateFormProps) {
               <button
                 key={s}
                 type="button"
-                onClick={() => addType(s)}
+                onClick={(e) => {
+                  e.preventDefault();
+                  setBusinessTypes((prev) => [...prev, s]);
+                }}
                 className="text-xs text-muted-foreground hover:text-primary border border-border rounded px-2 py-0.5 hover:border-primary transition-colors"
               >
                 + {s}
