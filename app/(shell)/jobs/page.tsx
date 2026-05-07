@@ -1,10 +1,11 @@
-import { listJobs } from "@/lib/api";
+import { JobsService } from "@/lib/services/jobs-service";
 import { JobsTableClient } from "@/components/jobs-table-client";
 import { JobCreateFormDialog } from "@/components/job-create-form-dialog";
 import { Briefcase } from "lucide-react";
 
 export default async function JobsPage() {
-  const jobs = await listJobs();
+  const result = await JobsService.listJobs();
+  const jobs = result.jobs;
 
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-5">
