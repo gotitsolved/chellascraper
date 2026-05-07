@@ -399,31 +399,23 @@ export function createJobInStore(input: {
   query: Job["query"];
 }): Job {
   const id = `job-${Date.now()}`;
-  const leadCount = randInt(20, 50);
   const job: Job = {
     id,
     name: input.name,
     createdAt: new Date().toISOString(),
     createdBy: "admin",
-    status: "running",
+    status: "queued", // Start as queued - job runner will set to running
     query: input.query,
     counters: {
-      placesDiscovered: leadCount,
+      placesDiscovered: 0,
       websitesScraped: 0,
       leadsEnriched: 0,
-      leadsTotal: leadCount,
+      leadsTotal: 0,
     },
-    lastRunAt: new Date().toISOString(),
   };
   jobsStore.set(id, job);
-
-  // Seed leads immediately
-  const leads = generateLeadsForJob(id, leadCount);
-  leadsStore.set(id, leads);
+  leadsStore.set(id, []);
   exportsStore.set(id, []);
-
-  // Simulate pipeline progression (in-memory, non-blocking)
-  simulatePipeline(id, leadCount);
 
   return job;
 }
@@ -432,45 +424,4 @@ export function getActivityForJob(jobId: string): ActivityEvent[] {
   return generateActivityForJob(jobId);
 }
 
-function simulatePipeline(jobId: string, total: number) {
-  // Step 1: scraping
-  setTimeout(() => {
-    const job = jobsStore.get(jobId);
-    if (!job) return;
-    jobsStore.set(jobId, {
-      ...job,
-      counters: { ...job.counters, websitesScraped: Math.floor(total * 0.8) },
-    });
-  }, 3000);
-
-  // Step 2: enrichment
-  setTimeout(() => {
-    const job = jobsStore.get(jobId);
-    if (!job) return;
-    jobsStore.set(jobId, {
-      ...job,
-      counters: {
-        ...job.counters,
-        websitesScraped: Math.floor(total * 0.9),
-        leadsEnriched: Math.floor(total * 0.5),
-      },
-    });
-  }, 6000);
-
-  // Step 3: complete
-  setTimeout(() => {
-    const job = jobsStore.get(jobId);
-    if (!job) return;
-    jobsStore.set(jobId, {
-      ...job,
-      status: "completed",
-      counters: {
-        placesDiscovered: total,
-        websitesScraped: total,
-        leadsEnriched: total,
-        leadsTotal: total,
-      },
-      lastRunAt: new Date().toISOString(),
-    });
-  }, 10000);
-}
+// simulatePipeline removed - job-runner.ts handles execution now
