@@ -4,6 +4,3 @@ import { neon } from '@neondatabase/serverless';
 const connectionString = process.env.DATABASE_URL;
 
 export const sql = connectionString ? neon(connectionString) : null;
-
-// Legacy export for compatibility
-export const prisma = null;
