@@ -5,41 +5,6 @@ import type { Lead, LeadListFilters, ExportRun, ExportRequestPayload } from '@/l
 export const LeadsService = {
   async addLeads(jobId: string, leads: Lead[]): Promise<void> {
     if (leads.length === 0) return;
-
-    if (prisma) {
-      try {
-        await prisma.lead.createMany({
-          data: leads.map(lead => ({
-            id: `lead-${Date.now()}-${Math.random()}`,
-            jobId,
-            placeId: lead.placeId,
-            businessName: lead.businessName,
-            contactName: lead.contactName,
-            category: lead.category,
-            address: lead.address,
-            city: lead.city,
-            state: lead.state,
-            country: lead.country || 'USA',
-            phone: lead.phone,
-            email: lead.email,
-            emailVerified: lead.emailVerified || false,
-            website: lead.website,
-            rating: lead.rating,
-            reviewCount: lead.reviewCount || 0,
-            score: lead.score || 0,
-            icpMatch: lead.icpMatch || false,
-            source: lead.source || 'google_places',
-          })),
-          skipDuplicates: true,
-        });
-        console.log(`[v0] Added ${leads.length} leads for job ${jobId} to database`);
-        return;
-      } catch (error) {
-        console.warn('[v0] Database error adding leads, using in-memory:', error);
-      }
-    }
-
-    // Fallback to in-memory storage
     console.log(`[v0] Added ${leads.length} leads for job ${jobId} to memory`);
     InMemoryStorage.leads.add(jobId, leads);
   },
@@ -58,42 +23,10 @@ export const LeadsService = {
     const pageSize = filters?.pageSize || 50;
     const skip = (page - 1) * pageSize;
 
-    if (prisma) {
-      try {
-        const where: any = { jobId };
-        if (filters?.minScore) where.score = { gte: filters.minScore };
-        if (filters?.minRating) where.rating = { gte: filters.minRating };
-        if (filters?.hasEmail) where.email = { not: null };
-        if (filters?.hasWebsite) where.website = { not: null };
-        if (filters?.icpMatch) where.icpMatch = true;
-
-        const [leads, total] = await Promise.all([
-          prisma.lead.findMany({
-            where,
-            orderBy: { score: 'desc' },
-            take: pageSize,
-            skip,
-          }),
-          prisma.lead.count({ where }),
-        ]);
-
-        return {
-          leads: leads.map(this.mapLeadRow),
-          total: await prisma.lead.count({ where: { jobId } }),
-          filtered: total,
-          page,
-          pageSize,
-        };
-      } catch (error) {
-        console.warn('[v0] Database error listing leads, using in-memory:', error);
-      }
-    }
-
-    // Fallback to in-memory storage
     let leads = InMemoryStorage.leads.list(jobId);
 
-    if (filters?.minScore) leads = leads.filter(l => (l.score || 0) >= filters.minScore);
-    if (filters?.minRating) leads = leads.filter(l => (l.rating || 0) >= filters.minRating);
+    if (filters?.minScore) leads = leads.filter(l => (l.score || 0) >= filters.minScore!);
+    if (filters?.minRating) leads = leads.filter(l => (l.rating || 0) >= filters.minRating!);
     if (filters?.hasEmail) leads = leads.filter(l => !!l.email);
     if (filters?.hasWebsite) leads = leads.filter(l => !!l.website);
     if (filters?.icpMatch) leads = leads.filter(l => l.icpMatch);
@@ -151,8 +84,6 @@ export const LeadsService = {
   },
 
   async listExports(jobId: string): Promise<ExportRun[]> {
-    // For now, return a single recent export based on the current state
-    // In a real system, you would query the database for all exports for this job
     const { filtered } = await this.listLeads(jobId);
     return [
       {
