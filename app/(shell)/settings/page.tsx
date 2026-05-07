@@ -1,10 +1,17 @@
-import { settingsStore } from "@/lib/services/jobs-service";
 import { SettingsPageClient } from "@/components/settings-page-client";
 import { Settings } from "lucide-react";
+import type { Settings as SettingsType } from "@/lib/types";
+
+export const dynamic = "force-dynamic";
+
+const defaultSettings: SettingsType = {
+  minRating: 3.5,
+  mustHaveWebsite: false,
+  mustHaveEmail: false,
+  excludeChains: false,
+};
 
 export default async function SettingsPage() {
-  const settings = settingsStore;
-
   return (
     <div className="p-6 max-w-3xl mx-auto space-y-6">
       <div className="flex items-center gap-3">
@@ -17,7 +24,7 @@ export default async function SettingsPage() {
         </div>
       </div>
 
-      <SettingsPageClient settings={settings} />
+      <SettingsPageClient settings={defaultSettings} />
     </div>
   );
 }
