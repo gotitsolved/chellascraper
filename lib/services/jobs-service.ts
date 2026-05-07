@@ -1,4 +1,4 @@
-import { db as prisma } from '@/lib/db';
+import { prisma } from '@/lib/db';
 import { InMemoryStorage } from '@/lib/storage';
 import type { Job, JobQuery } from '@/lib/types';
 

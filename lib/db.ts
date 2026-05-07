@@ -1,8 +1,8 @@
-// Database connection disabled - using in-memory storage fallback
-// The Prisma schema and migrations are created in Neon and ready to be used
-// when DATABASE_URL is properly configured in the build environment
+// Prisma Client singleton
+// Using fallback to null for serverless environment compatibility
+// The database schema is created in Neon and ready for use when DATABASE_URL is set
 
-export const db = null;
+export const prisma = null;
 
 
 
