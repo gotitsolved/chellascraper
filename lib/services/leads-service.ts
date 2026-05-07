@@ -4,6 +4,10 @@ import type { Lead, LeadListFilters, ExportRun, ExportRequestPayload } from '@/l
 export const LeadsService = {
   async addLeads(jobId: string, leads: Lead[]): Promise<void> {
     if (leads.length === 0) return;
+    if (!prisma) {
+      console.error('[v0] Database not initialized in addLeads');
+      return;
+    }
 
     try {
       await prisma.lead.createMany({
@@ -49,6 +53,10 @@ export const LeadsService = {
     const page = filters?.page || 1;
     const pageSize = filters?.pageSize || 50;
     const skip = (page - 1) * pageSize;
+
+    if (!prisma) {
+      return { leads: [], total: 0, filtered: 0, page, pageSize };
+    }
 
     try {
       // Build where clause
@@ -107,6 +115,10 @@ export const LeadsService = {
     if (payload.mustHaveWebsite) filterParts.push('Has website');
 
     const filterSummary = filterParts.length > 0 ? filterParts.join(', ') : 'No filters';
+
+    if (!prisma) {
+      throw new Error('Database not initialized');
+    }
 
     // Count filtered leads
     const { filtered } = await this.listLeads(jobId, {
@@ -189,7 +201,7 @@ export const LeadsService = {
     return csvContent;
   },
 
-  private escapeCsvField(field: string): string {
+  escapeCsvField(field: string): string {
     if (field.includes(',') || field.includes('"') || field.includes('\n')) {
       return `"${field.replace(/"/g, '""')}"`;
     }
