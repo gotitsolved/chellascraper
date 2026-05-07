@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { JobsService } from "@/lib/services/jobs-service";
+import { runJob } from "@/lib/services/job-runner";
 import type { JobQuery } from "@/lib/types";
 
 export async function GET() {
@@ -25,9 +26,14 @@ export async function POST(req: NextRequest) {
     }
 
     const job = await JobsService.createJob({ name, query });
+
+    // Run job in background (non-blocking)
+    runJob(job.id).catch(err => console.error("[v0] Background job error:", err));
+
     return NextResponse.json(job, { status: 201 });
   } catch (error) {
     console.error("[v0] Error creating job:", error);
     return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
   }
 }
+

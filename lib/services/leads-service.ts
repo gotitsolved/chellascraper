@@ -1,18 +1,14 @@
 /**
  * Leads Service
  * 
- * Handles lead data retrieval, filtering, and scoring.
- * Uses in-memory storage with pre-seeded demo data.
+ * Handles lead data retrieval, filtering, and scoring using Prisma ORM.
  */
 
 import type { Lead, LeadListFilters, ExportRun, ExportRequestPayload } from "@/lib/types";
-import { leadsStore, exportsStore } from "@/lib/mock-data";
+import { db } from "@/lib/db";
 
-export class LeadsService {
-  /**
-   * Get leads for a job with optional filtering and pagination.
-   */
-  static async listLeads(
+export const LeadsService = {
+  async listLeads(
     jobId: string,
     filters?: LeadListFilters
   ): Promise<{
@@ -22,75 +18,139 @@ export class LeadsService {
     page: number;
     pageSize: number;
   }> {
-    let leads = leadsStore.get(jobId) || [];
-    const total = leads.length;
+    const pageSize = filters?.pageSize || 50;
+    const page = filters?.page || 1;
+    const skip = (page - 1) * pageSize;
+
+    const where: any = { jobId };
 
     // Apply filters
-    if (filters) {
-      if (filters.minScore !== undefined) {
-        leads = leads.filter((lead) => lead.leadScore >= filters.minScore!);
-      }
-      if (filters.minRating !== undefined) {
-        leads = leads.filter((lead) => (lead.rating || 0) >= filters.minRating!);
-      }
-      if (filters.hasEmail) {
-        leads = leads.filter((lead) => !!lead.email);
-      }
-      if (filters.hasWebsite) {
-        leads = leads.filter((lead) => !!lead.websiteUrl);
-      }
-      if (filters.icpMatch === true) {
-        leads = leads.filter((lead) => lead.icpMatch);
-      } else if (filters.icpMatch === false) {
-        leads = leads.filter((lead) => !lead.icpMatch);
-      }
-      if (filters.city) {
-        leads = leads.filter(
-          (lead) =>
-            lead.city?.toLowerCase().includes(filters.city!.toLowerCase())
-        );
-      }
-      if (filters.country) {
-        leads = leads.filter(
-          (lead) =>
-            lead.country?.toLowerCase().includes(filters.country!.toLowerCase())
-        );
-      }
-    }
+    if (filters?.minScore) where.score = { gte: filters.minScore };
+    if (filters?.minRating) where.rating = { gte: filters.minRating };
+    if (filters?.hasEmail) where.email = { not: null };
+    if (filters?.hasWebsite) where.website = { not: null };
 
-    // Sort by score descending
-    leads.sort((a, b) => b.leadScore - a.leadScore);
+    const [leads, total] = await Promise.all([
+      db.lead.findMany({
+        where,
+        skip,
+        take: pageSize,
+        orderBy: { score: "desc" },
+      }),
+      db.lead.count({ where }),
+    ]);
 
-    const filtered = leads.length;
-    const page = filters?.page || 1;
-    const pageSize = filters?.pageSize || 50;
+    const allLeads = await db.lead.count({ where: { jobId } });
 
-    // Apply pagination
-    const offset = (page - 1) * pageSize;
-    const paginatedLeads = leads.slice(offset, offset + pageSize);
-
-    return { leads: paginatedLeads, total, filtered, page, pageSize };
-  }
+    return {
+      leads: leads.map(this.mapLeadFromDb),
+      total: allLeads,
+      filtered: total,
+      page,
+      pageSize,
+    };
+  },
 
   /**
-   * Get a single lead by ID.
+   * Add a lead to a job.
    */
-  static async getLead(jobId: string, leadId: string): Promise<Lead | null> {
-    const leads = leadsStore.get(jobId) || [];
-    return leads.find((lead) => lead.id === leadId) || null;
-  }
+  async addLead(jobId: string, leadData: Partial<Lead>): Promise<Lead> {
+    const lead = await db.lead.create({
+      data: {
+        jobId,
+        businessName: leadData.businessName || "",
+        contactName: leadData.contactName,
+        email: leadData.email,
+        phone: leadData.phone,
+        website: leadData.website,
+        address: leadData.address,
+        city: leadData.city,
+        state: leadData.state,
+        country: leadData.country,
+        rating: leadData.rating,
+        reviewCount: leadData.reviewCount,
+        source: leadData.source || "direct_scrape",
+        score: leadData.score || 0,
+      },
+    });
+
+    return this.mapLeadFromDb(lead);
+  },
+
+  /**
+   * Add multiple leads to a job.
+   */
+  async addLeads(jobId: string, leadsData: Partial<Lead>[]): Promise<Lead[]> {
+    const leads = await db.lead.createMany({
+      data: leadsData.map(lead => ({
+        jobId,
+        businessName: lead.businessName || "",
+        contactName: lead.contactName,
+        email: lead.email,
+        phone: lead.phone,
+        website: lead.website,
+        address: lead.address,
+        city: lead.city,
+        state: lead.state,
+        country: lead.country,
+        rating: lead.rating,
+        reviewCount: lead.reviewCount,
+        source: lead.source || "direct_scrape",
+        score: lead.score || 0,
+      })),
+    });
+
+    const created = await db.lead.findMany({
+      where: { jobId },
+      orderBy: { createdAt: "desc" },
+      take: leadsData.length,
+    });
+
+    return created.map(this.mapLeadFromDb);
+  },
+
+  /**
+   * Update a lead.
+   */
+  async updateLead(leadId: string, updates: Partial<Lead>): Promise<Lead | null> {
+    const lead = await db.lead.update({
+      where: { id: leadId },
+      data: {
+        contactName: updates.contactName,
+        email: updates.email,
+        phone: updates.phone,
+        website: updates.website,
+        address: updates.address,
+        city: updates.city,
+        state: updates.state,
+        country: updates.country,
+        rating: updates.rating,
+        reviewCount: updates.reviewCount,
+        emailStatus: updates.emailStatus,
+        score: updates.score,
+        updatedAt: new Date(),
+      },
+    });
+
+    return this.mapLeadFromDb(lead);
+  },
 
   /**
    * List exports for a job.
    */
-  static async listExports(jobId: string): Promise<ExportRun[]> {
-    return exportsStore.get(jobId) || [];
-  }
+  async listExports(jobId: string): Promise<ExportRun[]> {
+    const exports_list = await db.export.findMany({
+      where: { jobId },
+      orderBy: { createdAt: "desc" },
+    });
+
+    return exports_list.map(this.mapExportFromDb);
+  },
 
   /**
    * Create a new export for a job.
    */
-  static async createExport(
+  async createExport(
     jobId: string,
     payload: ExportRequestPayload
   ): Promise<ExportRun> {
@@ -99,7 +159,6 @@ export class LeadsService {
       minRating: payload.minRating,
       hasEmail: payload.mustHaveEmail,
       hasWebsite: payload.mustHaveWebsite,
-      icpMatch: payload.icpMatchOnly ? true : undefined,
       pageSize: 10000,
     });
 
@@ -109,85 +168,64 @@ export class LeadsService {
     if (payload.minRating) filterParts.push(`Rating >= ${payload.minRating}`);
     if (payload.mustHaveEmail) filterParts.push("Has email");
     if (payload.mustHaveWebsite) filterParts.push("Has website");
-    if (payload.icpMatchOnly) filterParts.push("ICP match only");
     if (payload.city) filterParts.push(`City: ${payload.city}`);
     if (payload.country) filterParts.push(`Country: ${payload.country}`);
 
-    const exportRun: ExportRun = {
-      id: `export-${Date.now()}`,
-      jobId,
-      createdAt: new Date().toISOString(),
-      format: "csv",
-      filterSummary: filterParts.length > 0 ? filterParts.join(", ") : "No filters",
-      rowCount: leads.length,
-      status: "ready",
-      downloadUrl: `/api/jobs/${jobId}/export?${new URLSearchParams(
-        Object.entries(payload)
-          .filter(([, v]) => v !== undefined)
-          .map(([k, v]) => [k, String(v)])
-      ).toString()}`,
-    };
+    const exportRun = await db.export.create({
+      data: {
+        jobId,
+        format: "csv",
+        status: "ready",
+        filterSummary: filterParts.length > 0 ? filterParts.join(", ") : "No filters",
+        rowCount: leads.length,
+        downloadUrl: `/api/jobs/${jobId}/export?${new URLSearchParams(
+          Object.entries(payload)
+            .filter(([, v]) => v !== undefined)
+            .map(([k, v]) => [k, String(v)])
+        ).toString()}`,
+      },
+    });
 
-    const existing = exportsStore.get(jobId) || [];
-    exportsStore.set(jobId, [exportRun, ...existing]);
-
-    return exportRun;
-  }
+    return this.mapExportFromDb(exportRun);
+  },
 
   /**
-   * Generate CSV from leads with Contact Name and Business Name as first columns.
+   * Map database lead to application type.
    */
-  static generateCsv(leads: Lead[]): string {
-    const headers = [
-      "Contact Name",
-      "Business Name",
-      "Category",
-      "Address",
-      "City",
-      "State",
-      "Country",
-      "Phone",
-      "Email",
-      "Website",
-      "Instagram",
-      "Facebook",
-      "Rating",
-      "Review Count",
-      "Lead Score",
-      "ICP Match",
-    ];
-
-    const rows = leads.map((lead) => [
-      lead.contactName || "",
-      lead.name,
-      lead.category,
-      lead.address || "",
-      lead.city || "",
-      lead.region || "",
-      lead.country || "",
-      lead.phone || "",
-      lead.email || "",
-      lead.websiteUrl || "",
-      lead.instagram || "",
-      lead.facebook || "",
-      lead.rating?.toFixed(1) || "",
-      lead.reviewCount?.toString() || "",
-      lead.leadScore.toFixed(0),
-      lead.icpMatch ? "Yes" : "No",
-    ]);
-
-    const escape = (val: string) => {
-      if (val.includes(",") || val.includes('"') || val.includes("\n")) {
-        return `"${val.replace(/"/g, '""')}"`;
-      }
-      return val;
+  mapLeadFromDb(dbLead: any): Lead {
+    return {
+      id: dbLead.id,
+      jobId: dbLead.jobId,
+      businessName: dbLead.businessName,
+      contactName: dbLead.contactName,
+      email: dbLead.email,
+      phone: dbLead.phone,
+      website: dbLead.website,
+      address: dbLead.address,
+      city: dbLead.city,
+      state: dbLead.state,
+      country: dbLead.country,
+      rating: dbLead.rating,
+      reviewCount: dbLead.reviewCount,
+      source: dbLead.source,
+      emailStatus: dbLead.emailStatus,
+      score: dbLead.score || 0,
     };
+  },
 
-    const csvRows = [
-      headers.join(","),
-      ...rows.map((row) => row.map(escape).join(",")),
-    ];
-
-    return csvRows.join("\n");
-  }
-}
+  /**
+   * Map database export to application type.
+   */
+  mapExportFromDb(dbExport: any): ExportRun {
+    return {
+      id: dbExport.id,
+      jobId: dbExport.jobId,
+      format: dbExport.format as "csv" | "json",
+      createdAt: dbExport.createdAt.toISOString(),
+      status: dbExport.status,
+      filterSummary: dbExport.filterSummary || "",
+      rowCount: dbExport.rowCount,
+      downloadUrl: dbExport.downloadUrl,
+    };
+  },
+};

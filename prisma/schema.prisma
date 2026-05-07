@@ -1,0 +1,89 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Job {
+  id        String   @id @default(cuid())
+  name      String
+  status    String   @default("completed") // completed, running, failed
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  createdBy String?
+  lastRunAt DateTime?
+  
+  query     Json // { businessTypes, locationText, radiusKm, filters }
+  counters  Json // { placesDiscovered, websitesScraped, leadsEnriched, leadsTotal }
+  errorMessage String?
+  
+  leads     Lead[]
+  exports   Export[]
+  activity  ActivityEvent[]
+
+  @@index([status])
+  @@index([createdAt])
+}
+
+model Lead {
+  id        String   @id @default(cuid())
+  jobId     String
+  job       Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  
+  businessName String
+  contactName  String?
+  email        String?
+  phone        String?
+  website      String?
+  address      String?
+  city         String?
+  state        String?
+  country      String?
+  
+  rating       Float?
+  reviewCount  Int?
+  source       String? // "google_places", "direct_scrape"
+  
+  // Email verification
+  emailStatus  String? // "verified", "invalid", "unverified"
+  
+  // ICP scoring
+  score        Float? @default(0)
+  
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([jobId])
+  @@index([email])
+  @@index([score])
+}
+
+model Export {
+  id           String   @id @default(cuid())
+  jobId        String
+  job          Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  
+  format       String   @default("csv")
+  createdAt    DateTime @default(now())
+  status       String   @default("ready") // ready, generating, failed
+  filterSummary String?
+  rowCount     Int
+  downloadUrl  String?
+
+  @@index([jobId])
+}
+
+model ActivityEvent {
+  id        String   @id @default(cuid())
+  jobId     String
+  job       Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  
+  type      String   // "job_created", "discovery_started", "scraping_started", etc
+  message   String
+  timestamp DateTime @default(now())
+
+  @@index([jobId])
+}

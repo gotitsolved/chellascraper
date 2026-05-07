@@ -1,128 +1,145 @@
 /**
  * Jobs Service
  * 
- * Handles job creation, retrieval, and status management.
- * Uses in-memory storage with pre-seeded demo data.
+ * Handles job creation, retrieval, and status management using Prisma ORM.
+ * Provides persistent storage across serverless invocations.
  */
 
-import type { Job, JobQuery, JobStatus, ActivityEvent } from "@/lib/types";
-import { jobsStore, leadsStore, exportsStore, createJobInStore, getActivityForJob, generateLeadsForJob } from "@/lib/mock-data";
+import type { Job, JobQuery, JobStatus } from "@/lib/types";
+import { db } from "@/lib/db";
 
-export class JobsService {
+export const JobsService = {
   /**
    * Create a new job with the given name and query parameters.
-   * In mock mode, jobs complete instantly with generated leads.
    */
-  static async createJob(input: {
+  async createJob(input: {
     name: string;
     query: JobQuery;
   }): Promise<Job> {
-    const job = createJobInStore(input);
-    
-    // In mock mode, immediately generate leads and mark complete
-    const leadCount = Math.floor(Math.random() * 30) + 20; // 20-50 leads
-    const leads = generateLeadsForJob(job.id, leadCount);
-    leadsStore.set(job.id, leads);
-    
-    // Update job to completed status
-    job.status = "completed";
-    job.lastRunAt = new Date().toISOString();
-    job.counters = {
-      placesDiscovered: leadCount,
-      websitesScraped: Math.floor(leadCount * 0.9),
-      leadsEnriched: leadCount,
-      leadsTotal: leadCount,
-    };
-    jobsStore.set(job.id, job);
-    
-    return job;
-  }
+    const job = await db.job.create({
+      data: {
+        name: input.name,
+        status: "completed",
+        query: input.query,
+        counters: {
+          placesDiscovered: 0,
+          websitesScraped: 0,
+          leadsEnriched: 0,
+          leadsTotal: 0,
+        },
+        createdBy: "admin",
+        lastRunAt: new Date(),
+      },
+    });
+
+    return this.mapJobFromDb(job);
+  },
 
   /**
    * Retrieve a job by ID.
    */
-  static async getJob(jobId: string): Promise<Job | null> {
-    return jobsStore.get(jobId) || null;
-  }
+  async getJob(jobId: string): Promise<Job | null> {
+    const job = await db.job.findUnique({
+      where: { id: jobId },
+    });
+
+    return job ? this.mapJobFromDb(job) : null;
+  },
 
   /**
    * List all jobs with optional filtering and pagination.
    */
-  static async listJobs(options?: {
+  async listJobs(options?: {
     status?: JobStatus;
     limit?: number;
     offset?: number;
   }): Promise<{ jobs: Job[]; total: number }> {
-    let jobs = Array.from(jobsStore.values());
+    const where = options?.status ? { status: options.status } : {};
+    const skip = options?.offset || 0;
+    const take = options?.limit || 50;
 
-    // Filter by status if provided
-    if (options?.status) {
-      jobs = jobs.filter((job) => job.status === options.status);
-    }
+    const [jobs, total] = await Promise.all([
+      db.job.findMany({
+        where,
+        orderBy: { createdAt: "desc" },
+        skip,
+        take,
+      }),
+      db.job.count({ where }),
+    ]);
 
-    // Sort by creation date, newest first
-    jobs.sort(
-      (a, b) =>
-        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-    );
-
-    const total = jobs.length;
-
-    // Apply pagination
-    if (options?.offset !== undefined) {
-      jobs = jobs.slice(options.offset);
-    }
-    if (options?.limit !== undefined) {
-      jobs = jobs.slice(0, options.limit);
-    }
-
-    return { jobs, total };
-  }
-
-  /**
-   * Update a job.
-   */
-  static async updateJob(jobId: string, updates: Partial<Job>): Promise<Job | null> {
-    const job = jobsStore.get(jobId);
-    if (!job) return null;
-    
-    const updated = { ...job, ...updates };
-    jobsStore.set(jobId, updated);
-    return updated;
-  }
+    return {
+      jobs: jobs.map((j) => this.mapJobFromDb(j)),
+      total,
+    };
+  },
 
   /**
    * Update a job's status.
    */
-  static async updateJobStatus(
+  async updateJobStatus(
     jobId: string,
     status: JobStatus
   ): Promise<Job | null> {
-    const job = jobsStore.get(jobId);
+    const job = await db.job.update({
+      where: { id: jobId },
+      data: { status, lastRunAt: new Date() },
+    });
+
+    return this.mapJobFromDb(job);
+  },
+
+  /**
+   * Update job counters.
+   */
+  async updateJobCounters(
+    jobId: string,
+    counters: {
+      placesDiscovered?: number;
+      websitesScraped?: number;
+      leadsEnriched?: number;
+      leadsTotal?: number;
+    }
+  ): Promise<Job | null> {
+    const job = await db.job.findUnique({ where: { id: jobId } });
     if (!job) return null;
 
-    job.status = status;
-    jobsStore.set(jobId, job);
-    return job;
-  }
+    const currentCounters = job.counters as any;
+    const updatedCounters = {
+      ...currentCounters,
+      ...counters,
+    };
+
+    const updated = await db.job.update({
+      where: { id: jobId },
+      data: { counters: updatedCounters },
+    });
+
+    return this.mapJobFromDb(updated);
+  },
 
   /**
-   * Get activity log for a job.
+   * Delete a job and its associated leads and exports.
    */
-  static async getActivity(jobId: string): Promise<ActivityEvent[]> {
-    return getActivityForJob(jobId);
-  }
-
-  /**
-   * Delete a job and its associated leads.
-   */
-  static async deleteJob(jobId: string): Promise<boolean> {
-    jobsStore.delete(jobId);
-    leadsStore.delete(jobId);
-    exportsStore.delete(jobId);
+  async deleteJob(jobId: string): Promise<boolean> {
+    await db.job.delete({ where: { id: jobId } });
     return true;
-  }
-}
+  },
 
-// Export settingsStore for API routes
-export { settingsStore } from "@/lib/mock-data";
+  /**
+   * Map database job to application type.
+   */
+  mapJobFromDb(dbJob: any): Job {
+    return {
+      id: dbJob.id,
+      name: dbJob.name,
+      createdAt: dbJob.createdAt.toISOString(),
+      createdBy: dbJob.createdBy,
+      status: dbJob.status as JobStatus,
+      query: dbJob.query as JobQuery,
+      counters: dbJob.counters as any,
+      lastRunAt: dbJob.lastRunAt?.toISOString(),
+      errorMessage: dbJob.errorMessage,
+    };
+  },
+};
