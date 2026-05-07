@@ -41,7 +41,6 @@ export function EmailVerificationCard({
       }
 
       const result = await response.json();
-      console.log("[v0] Email verification result:", result);
       // Note: In a real app, you'd update the lead in the parent component
       // For now, the service updates it in the store automatically
     } catch (err) {
