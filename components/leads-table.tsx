@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Mail, Globe, Star, CheckCircle2, XCircle } from "lucide-react";
+import { VerifyEmailButton } from "@/components/verify-email-button";
 import type { Lead } from "@/lib/types";
 
 interface LeadsTableProps {
@@ -129,7 +130,7 @@ export function LeadsTable({ leads, onLeadClick, selectedLeadId }: LeadsTablePro
               <TableCell>
                 <div className="flex items-center justify-center gap-1.5">
                   {lead.email && (
-                    <Mail className="h-3.5 w-3.5 text-primary" aria-label="Has email" />
+                    <VerifyEmailButton lead={lead} email={lead.email} />
                   )}
                   {lead.websiteUrl && (
                     <Globe className="h-3.5 w-3.5 text-muted-foreground" aria-label="Has website" />

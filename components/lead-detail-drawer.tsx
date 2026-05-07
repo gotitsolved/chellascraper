@@ -22,6 +22,7 @@ import {
   XCircle,
   ExternalLink,
 } from "lucide-react";
+import { EmailVerificationCard } from "@/components/email-verification-card";
 
 interface LeadDetailDrawerProps {
   lead: Lead | null;
@@ -169,12 +170,15 @@ export function LeadDetailDrawer({
                   Contact Information
                 </p>
                 {lead.email && (
-                  <ContactRow
-                    icon={<Mail className="h-4 w-4" />}
-                    label="Email"
-                    value={lead.email}
-                    href={`mailto:${lead.email}`}
-                  />
+                  <>
+                    <ContactRow
+                      icon={<Mail className="h-4 w-4" />}
+                      label="Email"
+                      value={lead.email}
+                      href={`mailto:${lead.email}`}
+                    />
+                    <EmailVerificationCard email={lead.email} lead={lead} />
+                  </>
                 )}
                 {lead.phone && (
                   <ContactRow

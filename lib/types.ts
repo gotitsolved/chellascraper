@@ -64,6 +64,16 @@ export interface Lead {
   icpExplanation?: string;
   jurisdiction?: string;
   crawledAt?: string;
+  // Email verification fields
+  verificationStatus?: "unverified" | "valid" | "invalid" | "risky" | "unknown";
+  verificationReason?: string;
+  verificationConfidence?: number;
+  verifiedAt?: string;
+  isDisposable?: boolean;
+  isRoleBased?: boolean;
+  hasMxRecords?: boolean;
+  smtpCheckAttempted?: boolean;
+  smtpCheckResult?: "passed" | "failed" | "unknown";
 }
 
 export type ExportFormat = "csv";
@@ -135,4 +145,24 @@ export interface ActivityEvent {
   stage: "places" | "scraping" | "enrichment" | "scoring" | "system";
   message: string;
   detail?: string;
+}
+
+// Email Verification Types
+export interface EmailVerificationResult {
+  email: string;
+  status: "valid" | "invalid" | "risky" | "unknown";
+  reason: string;
+  confidence: number;
+  isDisposable: boolean;
+  isRoleBased: boolean;
+  hasMxRecords: boolean;
+  smtpCheckAttempted: boolean;
+  smtpCheckResult: "passed" | "failed" | "unknown";
+  verifiedAt: string;
+}
+
+export interface EmailVerifierAdapter {
+  name: string;
+  verifyEmail(email: string): Promise<EmailVerificationResult>;
+  verifyEmails?(emails: string[]): Promise<EmailVerificationResult[]>;
 }
